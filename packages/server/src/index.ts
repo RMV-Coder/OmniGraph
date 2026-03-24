@@ -1,4 +1,5 @@
 import express from 'express';
+import * as fs from 'fs';
 import path from 'path';
 import rateLimit from 'express-rate-limit';
 import { parseDirectory } from '@omnigraph/parsers';
@@ -31,7 +32,7 @@ export function createServer(targetPath: string, port: number = 3000): void {
 
   // Serve the built UI
   const uiDistPath = path.resolve(__dirname, '../../ui/dist');
-  if (!require('fs').existsSync(uiDistPath)) {
+  if (!fs.existsSync(uiDistPath)) {
     console.warn(`[OmniGraph] UI dist not found at ${uiDistPath}. Run: cd packages/ui && npm run build`);
   }
   app.use(express.static(uiDistPath));

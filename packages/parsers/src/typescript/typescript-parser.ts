@@ -12,6 +12,16 @@ interface DecoratorNode {
   };
 }
 
+/** Typed interface for AST nodes that may carry decorators */
+interface NodeWithDecorators {
+  decorators?: DecoratorNode[];
+}
+
+/** Type guard to check if a value is a NodeWithDecorators */
+function hasDecorators(node: unknown): node is NodeWithDecorators {
+  return typeof node === 'object' && node !== null && 'decorators' in node;
+}
+
 /** Extracts NestJS node type and route from a list of decorator nodes */
 function extractNestJSInfo(
   decorators: DecoratorNode[]
@@ -80,7 +90,7 @@ export class TypeScriptParser implements IParser {
       const isTopLevelClass = stmt.type === 'ClassDeclaration';
 
       if (isExportedClass || isTopLevelClass) {
-        const decorators = ((stmt as unknown as { decorators?: DecoratorNode[] }).decorators) ?? [];
+        const decorators = hasDecorators(stmt) ? (stmt.decorators ?? []) : [];
         const nestInfo = extractNestJSInfo(decorators);
         if (nestInfo) {
           nodeType = nestInfo.nodeType;
