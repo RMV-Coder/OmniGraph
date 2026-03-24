@@ -1,11 +1,19 @@
 import express from 'express';
 import path from 'path';
+import rateLimit from 'express-rate-limit';
 import { parseDirectory } from '@omnigraph/parsers';
+
+const graphRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 export function createServer(targetPath: string, port: number = 3000): void {
   const app = express();
 
-  app.get('/api/graph', (_req, res) => {
+  app.get('/api/graph', graphRateLimit, (_req, res) => {
     try {
       const graph = parseDirectory(targetPath);
       res.json(graph);
