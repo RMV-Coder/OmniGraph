@@ -3,9 +3,16 @@ import path from 'path';
 import rateLimit from 'express-rate-limit';
 import { parseDirectory } from '@omnigraph/parsers';
 
-const graphRateLimit = rateLimit({
+const apiRateLimit = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const staticRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -13,7 +20,7 @@ const graphRateLimit = rateLimit({
 export function createServer(targetPath: string, port: number = 3000): void {
   const app = express();
 
-  app.get('/api/graph', graphRateLimit, (_req, res) => {
+  app.get('/api/graph', apiRateLimit, (_req, res) => {
     try {
       const graph = parseDirectory(targetPath);
       res.json(graph);
@@ -27,7 +34,7 @@ export function createServer(targetPath: string, port: number = 3000): void {
   app.use(express.static(uiDistPath));
 
   // SPA fallback
-  app.get('*', (_req, res) => {
+  app.get('*', staticRateLimit, (_req, res) => {
     res.sendFile(path.join(uiDistPath, 'index.html'));
   });
 
