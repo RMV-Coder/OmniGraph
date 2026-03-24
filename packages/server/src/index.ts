@@ -31,6 +31,9 @@ export function createServer(targetPath: string, port: number = 3000): void {
 
   // Serve the built UI
   const uiDistPath = path.resolve(__dirname, '../../ui/dist');
+  if (!require('fs').existsSync(uiDistPath)) {
+    console.warn(`[OmniGraph] UI dist not found at ${uiDistPath}. Run: cd packages/ui && npm run build`);
+  }
   app.use(express.static(uiDistPath));
 
   // SPA fallback

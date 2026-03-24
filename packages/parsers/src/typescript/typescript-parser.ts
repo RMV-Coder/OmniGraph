@@ -3,6 +3,35 @@ import { OmniGraph, OmniNode, OmniEdge } from '../types';
 import { parse } from '@typescript-eslint/typescript-estree';
 import * as path from 'path';
 
+/** Minimal shape of a decorator node as emitted by typescript-estree */
+interface DecoratorNode {
+  expression: {
+    type: string;
+    callee?: { type: string; name: string };
+    arguments?: Array<{ type: string; value?: unknown }>;
+  };
+}
+
+/** Extracts NestJS node type and route from a list of decorator nodes */
+function extractNestJSInfo(
+  decorators: DecoratorNode[]
+): { nodeType: string; route: string } | null {
+  for (const dec of decorators) {
+    const expr = dec.expression;
+    if (expr.type === 'CallExpression' && expr.callee?.type === 'Identifier') {
+      const name = expr.callee.name;
+      if (name === 'Controller') {
+        const arg = expr.arguments?.[0];
+        const route = arg?.type === 'Literal' ? String(arg.value) : '';
+        return { nodeType: 'nestjs-controller', route };
+      }
+      if (name === 'Injectable') return { nodeType: 'nestjs-injectable', route: '' };
+      if (name === 'Module') return { nodeType: 'nestjs-module', route: '' };
+    }
+  }
+  return null;
+}
+
 export class TypeScriptParser implements IParser {
   canHandle(filePath: string): boolean {
     return /\.(ts|tsx)$/.test(filePath);
@@ -27,14 +56,13 @@ export class TypeScriptParser implements IParser {
     let route = '';
 
     for (const stmt of ast.body) {
-      // Extract imports
+      // Extract relative imports
       if (stmt.type === 'ImportDeclaration') {
         const src = stmt.source.value as string;
         if (src.startsWith('./') || src.startsWith('../')) {
           let targetId = path.normalize(
             path.join(path.dirname(filePath), src)
           ).replace(/\\/g, '/');
-          // Add .ts extension if no extension
           if (!path.extname(targetId)) targetId += '.ts';
           edges.push({
             id: `e-${fileId}->${targetId}`,
@@ -45,48 +73,18 @@ export class TypeScriptParser implements IParser {
         }
       }
 
-      // Detect NestJS class decorators on exported class declarations
-      if (
+      // Detect NestJS decorators on exported or top-level class declarations
+      const isExportedClass =
         stmt.type === 'ExportNamedDeclaration' &&
-        stmt.declaration?.type === 'ClassDeclaration'
-      ) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const decorators = (stmt as any).decorators ?? [];
-        for (const dec of decorators) {
-          const expr = dec.expression;
-          if (expr.type === 'CallExpression' && expr.callee.type === 'Identifier') {
-            const name = expr.callee.name as string;
-            if (name === 'Controller') {
-              nodeType = 'nestjs-controller';
-              const arg = expr.arguments[0];
-              if (arg?.type === 'Literal') route = String(arg.value);
-            } else if (name === 'Injectable') {
-              nodeType = 'nestjs-injectable';
-            } else if (name === 'Module') {
-              nodeType = 'nestjs-module';
-            }
-          }
-        }
-      }
+        stmt.declaration?.type === 'ClassDeclaration';
+      const isTopLevelClass = stmt.type === 'ClassDeclaration';
 
-      // Also handle class declarations at top level (without export)
-      if (stmt.type === 'ClassDeclaration') {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const decorators = (stmt as any).decorators ?? [];
-        for (const dec of decorators) {
-          const expr = dec.expression;
-          if (expr.type === 'CallExpression' && expr.callee.type === 'Identifier') {
-            const name = expr.callee.name as string;
-            if (name === 'Controller') {
-              nodeType = 'nestjs-controller';
-              const arg = expr.arguments[0];
-              if (arg?.type === 'Literal') route = String(arg.value);
-            } else if (name === 'Injectable') {
-              nodeType = 'nestjs-injectable';
-            } else if (name === 'Module') {
-              nodeType = 'nestjs-module';
-            }
-          }
+      if (isExportedClass || isTopLevelClass) {
+        const decorators = ((stmt as unknown as { decorators?: DecoratorNode[] }).decorators) ?? [];
+        const nestInfo = extractNestJSInfo(decorators);
+        if (nestInfo) {
+          nodeType = nestInfo.nodeType;
+          route = nestInfo.route;
         }
       }
     }

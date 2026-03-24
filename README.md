@@ -6,7 +6,9 @@ OmniGraph is a local developer tool that statically analyzes full-stack monorepo
 
 ## Local Development Setup
 
-1. **Clone the repo and install dependencies:**
+1. **Prerequisites:** Node.js >= 18 and npm >= 9.
+
+2. **Clone the repo and install dependencies:**
    ```bash
    npm install
    ```
