@@ -43,13 +43,19 @@ export function styleNode(n: OmniNode, overrides?: Partial<Node>): Node {
 }
 
 export function styleEdge(e: OmniEdge): Edge {
+  const isHttpEdge = e.id.startsWith('e-http-');
   return {
     id: e.id,
     source: e.source,
     target: e.target,
     label: e.label,
     animated: true,
-    style: { stroke: '#888' },
+    style: {
+      stroke: isHttpEdge ? '#ff9800' : '#888',
+      strokeWidth: isHttpEdge ? 2 : 1,
+      strokeDasharray: isHttpEdge ? '6 3' : undefined,
+    },
+    labelStyle: isHttpEdge ? { fill: '#ff9800', fontSize: 10, fontWeight: 600 } : undefined,
   };
 }
 

@@ -3,6 +3,8 @@ import { TypeScriptParser } from './typescript/typescript-parser';
 import { PythonParser } from './python/python-parser';
 import { PhpParser } from './php/php-parser';
 import { OmniGraph, OmniNode, OmniEdge } from './types';
+import { detectHttpCalls, matchRoutes } from './cross-network';
+import type { HttpCall } from './cross-network';
 import * as fs from 'fs';
 import * as path from 'path';
 import ignore, { Ignore } from 'ignore';
@@ -32,6 +34,9 @@ export function parseDirectory(dirPath: string): OmniGraph {
   const seen = new Set<string>();
   const ig = loadGitignore(dirPath);
 
+  // Collect source contents for cross-network analysis
+  const sourceByFileId = new Map<string, { filePath: string; source: string }>();
+
   // Pass root directory to parsers that need it for import resolution
   pythonParser.setRootDir(dirPath);
   phpParser.setRootDir(dirPath);
@@ -58,11 +63,32 @@ export function parseDirectory(dirPath: string): OmniGraph {
           }
         }
         if (partial.edges) edges.push(...partial.edges);
+
+        // Store source for cross-network detection
+        const fileId = fullPath.replace(/\\/g, '/');
+        sourceByFileId.set(fileId, { filePath: fullPath, source });
       }
     }
   }
 
   walk(dirPath);
+
+  // ─── Cross-Network Tracing (F12) ──────────────────────────────────
+  // Scan all source files for HTTP client calls and match them to
+  // backend route handlers to create cross-network edges.
+  const httpCallsByFile = new Map<string, HttpCall[]>();
+
+  for (const [fileId, { filePath, source }] of sourceByFileId) {
+    const calls = detectHttpCalls(filePath, source);
+    if (calls.length > 0) {
+      httpCallsByFile.set(fileId, calls);
+    }
+  }
+
+  if (httpCallsByFile.size > 0) {
+    const crossNetwork = matchRoutes(nodes, httpCallsByFile);
+    edges.push(...crossNetwork.edges);
+  }
 
   // Filter out dangling edges where source or target node doesn't exist
   const nodeIds = new Set(nodes.map(n => n.id));

@@ -45,7 +45,7 @@ Modern full-stack monorepos have deeply nested dependency chains that span langu
 
 | # | Feature | Description | Status |
 |---|---------|-------------|--------|
-| F12 | Cross-Network Tracing | Heuristics to link frontend HTTP calls (e.g., Axios URLs) to backend route handlers | Not Started |
+| F12 | Cross-Network Tracing | Heuristic-based linking of frontend HTTP client calls (fetch, axios, httpClient, requests, Http::, Guzzle) to backend route handlers. Supports TS/JS, Python, and PHP client patterns. Matches via exact path, suffix matching (controller prefixes), and parameterized routes (:id, {id}). Cross-network edges rendered as dashed orange lines with method+path labels. | ✅ Done |
 | F13 | Code Snippets in Inspector | Show raw source code of the selected node in the inspector panel with syntax highlighting (keywords, strings, decorators, comments) via new `/api/file` endpoint with path traversal protection | ✅ Done |
 | F14 | Search & Filter | Search nodes by name, filter by type with color-coded toggle chips, highlight matching nodes and dim non-matches | ✅ Done |
 | F15 | Layout Presets | 5 layout algorithms: Directory (grouped by folder), Hierarchical (dagre TB), Force-Directed (live d3-force simulation with drag physics), Grid, Mind Map (dagre LR/RL) | ✅ Done |
