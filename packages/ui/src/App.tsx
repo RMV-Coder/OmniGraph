@@ -19,6 +19,7 @@ import { applyLayout } from './layout';
 import type { LayoutPreset, MindmapDirection } from './layout';
 import { NODE_COLORS } from './layout/shared';
 import { useForceSimulation } from './hooks/useForceSimulation';
+import { useExport } from './hooks/useExport';
 
 const nodeTypes = { directoryGroup: DirectoryGroupNode };
 
@@ -99,6 +100,8 @@ function GraphApp() {
     setNodes,
     setEdges,
   });
+
+  const { exportPng, exportSvg, exportJson } = useExport(graphData);
 
   const availableTypes = useMemo(() => {
     if (!graphData) return [];
@@ -231,6 +234,9 @@ function GraphApp() {
         totalCount={graphData?.nodes.length ?? 0}
         selectedNode={selected}
         onCloseInspector={() => setSelected(null)}
+        onExportPng={exportPng}
+        onExportSvg={exportSvg}
+        onExportJson={exportJson}
       />
     </div>
   );

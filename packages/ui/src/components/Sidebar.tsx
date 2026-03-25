@@ -3,6 +3,7 @@ import type { LayoutPreset, MindmapDirection } from '../layout';
 import { LAYOUT_PRESETS } from '../layout';
 import { NODE_COLORS } from '../layout/shared';
 import type { OmniNode } from '../types';
+import CodeViewer from './CodeViewer';
 
 const NODE_TYPE_LABELS: Record<string, string> = {
   // TypeScript / JavaScript
@@ -64,6 +65,18 @@ const dividerStyle: React.CSSProperties = {
   margin: '4px 0',
 };
 
+const exportBtnStyle: React.CSSProperties = {
+  flex: 1,
+  background: '#1a1a2e',
+  color: '#e0e0e0',
+  border: '1px solid #444',
+  borderRadius: 4,
+  padding: '5px 0',
+  fontSize: 11,
+  cursor: 'pointer',
+  transition: 'background 0.15s',
+};
+
 interface Props {
   // Layout
   layoutPreset: LayoutPreset;
@@ -81,6 +94,10 @@ interface Props {
   // Inspector
   selectedNode: OmniNode | null;
   onCloseInspector: () => void;
+  // Export
+  onExportPng: () => void;
+  onExportSvg: () => void;
+  onExportJson: () => void;
 }
 
 export default function Sidebar({
@@ -97,6 +114,9 @@ export default function Sidebar({
   totalCount,
   selectedNode,
   onCloseInspector,
+  onExportPng,
+  onExportSvg,
+  onExportJson,
 }: Props) {
   return (
     <div
@@ -218,6 +238,16 @@ export default function Sidebar({
             })}
           </div>
         </div>
+
+        {/* Export buttons */}
+        <div style={{ marginTop: 12 }}>
+          <p style={labelStyle}>Export</p>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button onClick={onExportPng} style={exportBtnStyle}>PNG</button>
+            <button onClick={onExportSvg} style={exportBtnStyle}>SVG</button>
+            <button onClick={onExportJson} style={exportBtnStyle}>JSON</button>
+          </div>
+        </div>
       </div>
 
       {/* === Divider === */}
@@ -273,10 +303,60 @@ export default function Sidebar({
             </div>
           )}
 
+          {selectedNode.metadata.language && (
+            <div>
+              <p style={labelStyle}>Language</p>
+              <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.language}</p>
+            </div>
+          )}
+
+          {selectedNode.metadata.framework && (
+            <div>
+              <p style={labelStyle}>Framework</p>
+              <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.framework}</p>
+            </div>
+          )}
+
+          {selectedNode.metadata.namespace && (
+            <div>
+              <p style={labelStyle}>Namespace</p>
+              <p style={{ fontSize: 11, color: '#e0e0e0', wordBreak: 'break-all', margin: 0 }}>
+                {selectedNode.metadata.namespace}
+              </p>
+            </div>
+          )}
+
+          {selectedNode.metadata.classes && (
+            <div>
+              <p style={labelStyle}>Classes</p>
+              <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.classes}</p>
+            </div>
+          )}
+
+          {selectedNode.metadata.functions && (
+            <div>
+              <p style={labelStyle}>Functions</p>
+              <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.functions}</p>
+            </div>
+          )}
+
+          {selectedNode.metadata.methods && (
+            <div>
+              <p style={labelStyle}>Methods</p>
+              <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.methods}</p>
+            </div>
+          )}
+
           <div>
             <p style={labelStyle}>Node ID</p>
             <p style={{ fontSize: 11, color: '#888', wordBreak: 'break-all', margin: 0 }}>{selectedNode.id}</p>
           </div>
+
+          {/* === Divider before source === */}
+          <div style={dividerStyle} />
+
+          {/* === Code Snippet === */}
+          <CodeViewer filePath={selectedNode.metadata.filePath ?? selectedNode.id} />
         </div>
       ) : (
         <div style={{ padding: '12px 16px' }}>

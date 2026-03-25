@@ -19,12 +19,53 @@ const staticRateLimit = rateLimit({
 });
 
 export function createServer(targetPath: string, port: number = 3000): void {
+  const resolvedTarget = path.resolve(targetPath);
   const app = express();
 
   app.get('/api/graph', apiRateLimit, (_req, res) => {
     try {
       const graph = parseDirectory(targetPath);
       res.json(graph);
+    } catch (err) {
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
+  /** Serve the raw content of a file inside the analyzed repo. */
+  app.get('/api/file', apiRateLimit, (req, res) => {
+    try {
+      const filePath = req.query.path as string | undefined;
+      if (!filePath) {
+        res.status(400).json({ error: 'Missing "path" query parameter' });
+        return;
+      }
+
+      // Resolve the requested path and ensure it's within the target directory
+      const resolved = path.resolve(filePath);
+      if (!resolved.startsWith(resolvedTarget)) {
+        res.status(403).json({ error: 'Path is outside the analyzed directory' });
+        return;
+      }
+
+      if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
+        res.status(404).json({ error: 'File not found' });
+        return;
+      }
+
+      // Read file with a size limit (1MB) to prevent serving huge files
+      const stats = fs.statSync(resolved);
+      if (stats.size > 1024 * 1024) {
+        res.status(413).json({ error: 'File too large (max 1MB)' });
+        return;
+      }
+
+      const content = fs.readFileSync(resolved, 'utf-8');
+      res.json({
+        path: resolved,
+        content,
+        lines: content.split('\n').length,
+        size: stats.size,
+      });
     } catch (err) {
       res.status(500).json({ error: String(err) });
     }
