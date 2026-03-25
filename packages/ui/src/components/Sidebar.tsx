@@ -5,11 +5,23 @@ import { NODE_COLORS } from '../layout/shared';
 import type { OmniNode } from '../types';
 
 const NODE_TYPE_LABELS: Record<string, string> = {
+  // TypeScript / JavaScript
   'nestjs-controller': 'Controller',
   'nestjs-injectable': 'Injectable',
   'nestjs-module': 'Module',
   'typescript-file': 'TypeScript',
   'javascript-file': 'JavaScript',
+  // Python
+  'python-file': 'Python',
+  'python-fastapi-route': 'FastAPI Route',
+  'python-django-view': 'Django View',
+  'python-django-model': 'Django Model',
+  // PHP
+  'php-file': 'PHP',
+  'php-laravel-controller': 'Laravel Controller',
+  'php-laravel-model': 'Laravel Model',
+  'php-laravel-middleware': 'Laravel Middleware',
+  'php-laravel-route': 'Laravel Route',
 };
 
 const selectStyle: React.CSSProperties = {

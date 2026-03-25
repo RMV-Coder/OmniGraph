@@ -2,11 +2,23 @@ import type { Node, Edge } from 'reactflow';
 import type { OmniNode, OmniEdge } from '../types';
 
 export const NODE_COLORS: Record<string, string> = {
+  // TypeScript / JavaScript
   'nestjs-controller': '#e8534a',
   'nestjs-injectable': '#4a90e8',
   'nestjs-module': '#f5a623',
   'typescript-file': '#7ed321',
   'javascript-file': '#f0db4f',
+  // Python
+  'python-file': '#3776ab',
+  'python-fastapi-route': '#009688',
+  'python-django-view': '#092e20',
+  'python-django-model': '#44b78b',
+  // PHP
+  'php-file': '#777bb4',
+  'php-laravel-controller': '#ff2d20',
+  'php-laravel-model': '#f4645f',
+  'php-laravel-middleware': '#fb503b',
+  'php-laravel-route': '#ff7043',
 };
 
 export const NODE_WIDTH = 172;
