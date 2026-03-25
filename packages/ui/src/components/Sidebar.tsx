@@ -2,22 +2,23 @@ import React from 'react';
 import type { LayoutPreset, MindmapDirection } from '../layout';
 import { LAYOUT_PRESETS } from '../layout';
 import { NODE_COLORS } from '../layout/shared';
-import type { OmniNode } from '../types';
+import type { OmniNode, OmniEdge, HttpMethod, ProxyResponse, FlowTrace } from '../types';
 import CodeViewer from './CodeViewer';
+import ApiClientPanel from './sidebar/ApiClientPanel';
+import FlowTracerPanel from './sidebar/FlowTracerPanel';
+
+export type SidebarTab = 'controls' | 'api-client' | 'flow-tracer';
 
 const NODE_TYPE_LABELS: Record<string, string> = {
-  // TypeScript / JavaScript
   'nestjs-controller': 'Controller',
   'nestjs-injectable': 'Injectable',
   'nestjs-module': 'Module',
   'typescript-file': 'TypeScript',
   'javascript-file': 'JavaScript',
-  // Python
   'python-file': 'Python',
   'python-fastapi-route': 'FastAPI Route',
   'python-django-view': 'Django View',
   'python-django-model': 'Django Model',
-  // PHP
   'php-file': 'PHP',
   'php-laravel-controller': 'Laravel Controller',
   'php-laravel-model': 'Laravel Model',
@@ -78,6 +79,9 @@ const exportBtnStyle: React.CSSProperties = {
 };
 
 interface Props {
+  // Tab control
+  activeTab: SidebarTab;
+  onTabChange: (tab: SidebarTab) => void;
   // Layout
   layoutPreset: LayoutPreset;
   onLayoutChange: (preset: LayoutPreset) => void;
@@ -98,42 +102,99 @@ interface Props {
   onExportPng: () => void;
   onExportSvg: () => void;
   onExportJson: () => void;
+  // API Client
+  apiRequest: { method: HttpMethod; url: string; headers: Record<string, string>; queryParams: Record<string, string>; body: string | null };
+  apiResponse: ProxyResponse | null;
+  apiLoading: boolean;
+  apiError: string | null;
+  onApiMethodChange: (method: HttpMethod) => void;
+  onApiUrlChange: (url: string) => void;
+  onApiSetHeader: (key: string, value: string) => void;
+  onApiRemoveHeader: (key: string) => void;
+  onApiSetQueryParam: (key: string, value: string) => void;
+  onApiRemoveQueryParam: (key: string) => void;
+  onApiBodyChange: (body: string | null) => void;
+  onApiSend: () => void;
+  onApiReset: () => void;
+  // Flow Tracer
+  flowTrace: FlowTrace | null;
+  flowCurrentStepIndex: number;
+  onFlowStepForward: () => void;
+  onFlowStepBackward: () => void;
+  onFlowGoToStep: (index: number) => void;
+  onFlowStop: () => void;
+  onFlowOpenInApiClient: () => void;
 }
 
-export default function Sidebar({
-  layoutPreset,
-  onLayoutChange,
-  mindmapDirection,
-  onDirectionChange,
-  searchQuery,
-  onSearchChange,
-  activeTypes,
-  onTypeToggle,
-  availableTypes,
-  matchCount,
-  totalCount,
-  selectedNode,
-  onCloseInspector,
-  onExportPng,
-  onExportSvg,
-  onExportJson,
-}: Props) {
+// ─── Tab Bar ─────────────────────────────────────────────────────────
+
+function TabBar({
+  activeTab,
+  onTabChange,
+  hasTrace,
+}: {
+  activeTab: SidebarTab;
+  onTabChange: (tab: SidebarTab) => void;
+  hasTrace: boolean;
+}) {
+  const tabs: { key: SidebarTab; label: string; icon: string; show: boolean }[] = [
+    { key: 'controls', label: 'Graph', icon: '\u{1F4CA}', show: true },
+    { key: 'api-client', label: 'API', icon: '\u{1F4E1}', show: true },
+    { key: 'flow-tracer', label: 'Trace', icon: '\u{1F50D}', show: hasTrace },
+  ];
+
   return (
     <div
       style={{
-        width: 280,
-        background: '#0d0d1e',
-        borderLeft: '1px solid #333',
         display: 'flex',
-        flexDirection: 'column',
-        overflowY: 'auto',
+        borderBottom: '1px solid #333',
         flexShrink: 0,
       }}
     >
-      {/* === Controls Section === */}
-      <div style={{ padding: '16px 16px 12px' }}>
+      {tabs
+        .filter(t => t.show)
+        .map(t => (
+          <button
+            key={t.key}
+            onClick={() => onTabChange(t.key)}
+            style={{
+              flex: 1,
+              background: activeTab === t.key ? '#1a1a2e' : 'transparent',
+              color: activeTab === t.key ? '#fff' : '#666',
+              border: 'none',
+              borderBottom: activeTab === t.key ? '2px solid #4a90e8' : '2px solid transparent',
+              padding: '8px 4px',
+              fontSize: 11,
+              fontWeight: activeTab === t.key ? 700 : 400,
+              cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}
+          >
+            {t.icon} {t.label}
+          </button>
+        ))}
+    </div>
+  );
+}
+
+// ─── Controls Panel ──────────────────────────────────────────────────
+
+function ControlsPanel({
+  layoutPreset, onLayoutChange, mindmapDirection, onDirectionChange,
+  searchQuery, onSearchChange, activeTypes, onTypeToggle, availableTypes,
+  matchCount, totalCount, selectedNode, onCloseInspector,
+  onExportPng, onExportSvg, onExportJson,
+}: Pick<Props,
+  'layoutPreset' | 'onLayoutChange' | 'mindmapDirection' | 'onDirectionChange' |
+  'searchQuery' | 'onSearchChange' | 'activeTypes' | 'onTypeToggle' | 'availableTypes' |
+  'matchCount' | 'totalCount' | 'selectedNode' | 'onCloseInspector' |
+  'onExportPng' | 'onExportSvg' | 'onExportJson'
+>) {
+  return (
+    <>
+      <div style={{ padding: '12px 16px 8px' }}>
         {/* Layout selector */}
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 10 }}>
           <p style={labelStyle}>Layout</p>
           <select
             value={layoutPreset}
@@ -146,9 +207,8 @@ export default function Sidebar({
           </select>
         </div>
 
-        {/* Mindmap direction */}
         {layoutPreset === 'mindmap' && (
-          <div style={{ marginBottom: 12 }}>
+          <div style={{ marginBottom: 10 }}>
             <p style={labelStyle}>Direction</p>
             <select
               value={mindmapDirection}
@@ -170,26 +230,15 @@ export default function Sidebar({
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder="Search nodes..."
-              style={{
-                ...selectStyle,
-                padding: '6px 28px 6px 8px',
-              }}
+              style={{ ...selectStyle, padding: '6px 28px 6px 8px' }}
             />
             {searchQuery && (
               <button
                 onClick={() => onSearchChange('')}
                 style={{
-                  position: 'absolute',
-                  right: 6,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  background: 'none',
-                  border: 'none',
-                  color: '#666',
-                  cursor: 'pointer',
-                  fontSize: 14,
-                  padding: 0,
-                  lineHeight: 1,
+                  position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+                  background: 'none', border: 'none', color: '#666', cursor: 'pointer',
+                  fontSize: 14, padding: 0, lineHeight: 1,
                 }}
               >
                 &times;
@@ -222,16 +271,10 @@ export default function Sidebar({
                     opacity: active ? 1 : 0.5,
                   }}
                 >
-                  <span
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: '50%',
-                      background: color,
-                      display: 'inline-block',
-                      opacity: active ? 1 : 0.4,
-                    }}
-                  />
+                  <span style={{
+                    width: 8, height: 8, borderRadius: '50%', background: color,
+                    display: 'inline-block', opacity: active ? 1 : 0.4,
+                  }} />
                   {NODE_TYPE_LABELS[type] ?? type}
                 </div>
               );
@@ -239,8 +282,8 @@ export default function Sidebar({
           </div>
         </div>
 
-        {/* Export buttons */}
-        <div style={{ marginTop: 12 }}>
+        {/* Export */}
+        <div style={{ marginTop: 10 }}>
           <p style={labelStyle}>Export</p>
           <div style={{ display: 'flex', gap: 6 }}>
             <button onClick={onExportPng} style={exportBtnStyle}>PNG</button>
@@ -250,119 +293,158 @@ export default function Sidebar({
         </div>
       </div>
 
-      {/* === Divider === */}
       <div style={dividerStyle} />
 
-      {/* === Node Inspector Section === */}
+      {/* Node Inspector */}
       {selectedNode ? (
-        <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h2 style={{ fontSize: 14, color: '#fff', margin: 0 }}>{selectedNode.label}</h2>
             <button
               onClick={onCloseInspector}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: '#888',
-                cursor: 'pointer',
-                fontSize: 16,
-                padding: 0,
-                lineHeight: 1,
-              }}
+              style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: 16, padding: 0, lineHeight: 1 }}
             >
               &times;
             </button>
           </div>
-
           <div>
-            <span
-              style={{
-                background: NODE_COLORS[selectedNode.type] ?? '#888',
-                borderRadius: 4,
-                padding: '2px 8px',
-                fontSize: 10,
-                color: '#fff',
-                display: 'inline-block',
-              }}
-            >
+            <span style={{
+              background: NODE_COLORS[selectedNode.type] ?? '#888', borderRadius: 4,
+              padding: '2px 8px', fontSize: 10, color: '#fff', display: 'inline-block',
+            }}>
               {selectedNode.type}
             </span>
           </div>
-
           <div>
             <p style={labelStyle}>File Path</p>
             <p style={{ fontSize: 11, color: '#e0e0e0', wordBreak: 'break-all', margin: 0 }}>
               {selectedNode.metadata.filePath ?? selectedNode.id}
             </p>
           </div>
-
           {selectedNode.metadata.route && (
             <div>
               <p style={labelStyle}>Route</p>
               <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.route}</p>
             </div>
           )}
-
           {selectedNode.metadata.language && (
             <div>
               <p style={labelStyle}>Language</p>
               <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.language}</p>
             </div>
           )}
-
           {selectedNode.metadata.framework && (
             <div>
               <p style={labelStyle}>Framework</p>
               <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.framework}</p>
             </div>
           )}
-
           {selectedNode.metadata.namespace && (
             <div>
               <p style={labelStyle}>Namespace</p>
-              <p style={{ fontSize: 11, color: '#e0e0e0', wordBreak: 'break-all', margin: 0 }}>
-                {selectedNode.metadata.namespace}
-              </p>
+              <p style={{ fontSize: 11, color: '#e0e0e0', wordBreak: 'break-all', margin: 0 }}>{selectedNode.metadata.namespace}</p>
             </div>
           )}
-
           {selectedNode.metadata.classes && (
             <div>
               <p style={labelStyle}>Classes</p>
               <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.classes}</p>
             </div>
           )}
-
           {selectedNode.metadata.functions && (
             <div>
               <p style={labelStyle}>Functions</p>
               <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.functions}</p>
             </div>
           )}
-
           {selectedNode.metadata.methods && (
             <div>
               <p style={labelStyle}>Methods</p>
               <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.methods}</p>
             </div>
           )}
-
           <div>
             <p style={labelStyle}>Node ID</p>
             <p style={{ fontSize: 11, color: '#888', wordBreak: 'break-all', margin: 0 }}>{selectedNode.id}</p>
           </div>
-
-          {/* === Divider before source === */}
           <div style={dividerStyle} />
-
-          {/* === Code Snippet === */}
           <CodeViewer filePath={selectedNode.metadata.filePath ?? selectedNode.id} />
         </div>
       ) : (
-        <div style={{ padding: '12px 16px' }}>
+        <div style={{ padding: '10px 16px' }}>
           <p style={{ fontSize: 11, color: '#555', fontStyle: 'italic', margin: 0 }}>
             Click a node to inspect
           </p>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── Main Sidebar ────────────────────────────────────────────────────
+
+export default function Sidebar(props: Props) {
+  const {
+    activeTab, onTabChange,
+    // API Client
+    apiRequest, apiResponse, apiLoading, apiError,
+    onApiMethodChange, onApiUrlChange, onApiSetHeader, onApiRemoveHeader,
+    onApiSetQueryParam, onApiRemoveQueryParam, onApiBodyChange, onApiSend, onApiReset,
+    // Flow Tracer
+    flowTrace, flowCurrentStepIndex,
+    onFlowStepForward, onFlowStepBackward, onFlowGoToStep, onFlowStop, onFlowOpenInApiClient,
+  } = props;
+
+  const sidebarWidth = activeTab === 'controls' ? 280 : 380;
+
+  return (
+    <div
+      style={{
+        width: sidebarWidth,
+        background: '#0d0d1e',
+        borderLeft: '1px solid #333',
+        display: 'flex',
+        flexDirection: 'column',
+        overflowY: 'auto',
+        flexShrink: 0,
+        transition: 'width 0.2s ease',
+      }}
+    >
+      <TabBar activeTab={activeTab} onTabChange={onTabChange} hasTrace={flowTrace !== null} />
+
+      {activeTab === 'controls' && <ControlsPanel {...props} />}
+
+      {activeTab === 'api-client' && (
+        <div style={{ padding: '12px 16px' }}>
+          <ApiClientPanel
+            request={apiRequest}
+            response={apiResponse}
+            loading={apiLoading}
+            error={apiError}
+            onMethodChange={onApiMethodChange}
+            onUrlChange={onApiUrlChange}
+            onSetHeader={onApiSetHeader}
+            onRemoveHeader={onApiRemoveHeader}
+            onSetQueryParam={onApiSetQueryParam}
+            onRemoveQueryParam={onApiRemoveQueryParam}
+            onBodyChange={onApiBodyChange}
+            onSend={onApiSend}
+            onReset={onApiReset}
+          />
+        </div>
+      )}
+
+      {activeTab === 'flow-tracer' && flowTrace && (
+        <div style={{ padding: '12px 16px' }}>
+          <FlowTracerPanel
+            trace={flowTrace}
+            currentStepIndex={flowCurrentStepIndex}
+            onStepForward={onFlowStepForward}
+            onStepBackward={onFlowStepBackward}
+            onGoToStep={onFlowGoToStep}
+            onStop={onFlowStop}
+            onOpenInApiClient={onFlowOpenInApiClient}
+          />
         </div>
       )}
     </div>

@@ -49,6 +49,7 @@ export function styleEdge(e: OmniEdge): Edge {
     source: e.source,
     target: e.target,
     label: e.label,
+    data: { omniEdge: e },
     animated: true,
     style: {
       stroke: isHttpEdge ? '#ff9800' : '#888',

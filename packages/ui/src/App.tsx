@@ -6,20 +6,22 @@ import ReactFlow, {
   Node,
   Edge,
   NodeMouseHandler,
-  NodeDragHandler,
   useNodesState,
   useEdgesState,
   useReactFlow,
   ReactFlowProvider,
 } from 'reactflow';
-import type { OmniGraph, OmniNode } from './types';
+import type { OmniGraph, OmniNode, OmniEdge, HttpMethod } from './types';
 import Sidebar from './components/Sidebar';
+import type { SidebarTab } from './components/Sidebar';
 import DirectoryGroupNode from './components/DirectoryGroupNode';
 import { applyLayout } from './layout';
 import type { LayoutPreset, MindmapDirection } from './layout';
 import { NODE_COLORS } from './layout/shared';
 import { useForceSimulation } from './hooks/useForceSimulation';
 import { useExport } from './hooks/useExport';
+import { useApiClient } from './hooks/useApiClient';
+import { useFlowTracer } from './hooks/useFlowTracer';
 
 const nodeTypes = { directoryGroup: DirectoryGroupNode };
 
@@ -77,6 +79,46 @@ function applyFilterStyles(
   return { nodes: styledNodes, edges: styledEdges };
 }
 
+/** Apply trace highlight styling when flow tracer is active */
+function applyTraceStyles(
+  nodes: Node[],
+  edges: Edge[],
+  traceNodeId: string | null,
+  traceEdgeId: string | null,
+): { nodes: Node[]; edges: Edge[] } {
+  if (!traceNodeId) return { nodes, edges };
+
+  const styledNodes = nodes.map(node => {
+    if (node.type === 'directoryGroup') return node;
+    const isCurrent = node.id === traceNodeId;
+    return {
+      ...node,
+      style: {
+        ...node.style,
+        opacity: isCurrent ? 1 : 0.25,
+        boxShadow: isCurrent ? '0 0 16px 4px rgba(74, 144, 232, 0.6)' : undefined,
+        transition: 'opacity 0.3s, box-shadow 0.3s',
+      },
+    };
+  });
+
+  const styledEdges = edges.map(edge => {
+    const isTraced = edge.id === traceEdgeId;
+    return {
+      ...edge,
+      style: {
+        ...edge.style,
+        opacity: isTraced ? 1 : 0.1,
+        strokeWidth: isTraced ? 3 : (edge.style?.strokeWidth ?? 1),
+        transition: 'opacity 0.3s, stroke-width 0.3s',
+      },
+      animated: isTraced,
+    };
+  });
+
+  return { nodes: styledNodes, edges: styledEdges };
+}
+
 function GraphApp() {
   const [graphData, setGraphData] = useState<OmniGraph | null>(null);
   const [layoutPreset, setLayoutPreset] = useState<LayoutPreset>('directory');
@@ -88,6 +130,7 @@ function GraphApp() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTypes, setActiveTypes] = useState<Set<string>>(new Set());
+  const [activeTab, setActiveTab] = useState<SidebarTab>('controls');
   const { fitView } = useReactFlow();
 
   const [layoutNodes, setLayoutNodes] = useState<Node[]>([]);
@@ -102,6 +145,8 @@ function GraphApp() {
   });
 
   const { exportPng, exportSvg, exportJson } = useExport(graphData);
+  const apiClient = useApiClient();
+  const flowTracer = useFlowTracer(graphData);
 
   const availableTypes = useMemo(() => {
     if (!graphData) return [];
@@ -130,7 +175,6 @@ function GraphApp() {
 
   useEffect(() => {
     if (!graphData) return;
-    // Force layout is handled by the live simulation hook
     if (isForceActive) {
       setLayoutNodes([]);
       setLayoutEdges([]);
@@ -144,16 +188,31 @@ function GraphApp() {
     setTimeout(() => fitView({ padding: 0.1 }), 50);
   }, [graphData, layoutPreset, mindmapDirection]);
 
+  // Apply filter + trace styles
   useEffect(() => {
     if (!graphData || isForceActive) return;
     const isFiltering = searchQuery !== '' || activeTypes.size !== availableTypes.length;
     const matchingIds = getMatchingIds(graphData, searchQuery, activeTypes);
-    const { nodes: styled, edges: styledEdges } = applyFilterStyles(
+
+    let { nodes: styled, edges: styledEdges } = applyFilterStyles(
       layoutNodes, layoutEdges, matchingIds, isFiltering,
     );
+
+    // Overlay trace highlighting when active
+    if (flowTracer.isTracing && flowTracer.currentStep) {
+      const result = applyTraceStyles(
+        styled, styledEdges,
+        flowTracer.currentStep.nodeId,
+        flowTracer.currentStep.edgeId,
+      );
+      styled = result.nodes;
+      styledEdges = result.edges;
+    }
+
     setNodes(styled);
     setEdges(styledEdges);
-  }, [layoutNodes, layoutEdges, searchQuery, activeTypes, availableTypes, isForceActive]);
+  }, [layoutNodes, layoutEdges, searchQuery, activeTypes, availableTypes, isForceActive,
+      flowTracer.isTracing, flowTracer.currentStep]);
 
   const matchCount = useMemo(() => {
     if (!graphData) return 0;
@@ -172,12 +231,45 @@ function GraphApp() {
   const onNodeClick: NodeMouseHandler = useCallback((_evt, node) => {
     if (node.data.omniNode) {
       setSelected(node.data.omniNode as OmniNode);
+      setActiveTab('controls');
     }
   }, []);
+
+  const onEdgeClick = useCallback((_evt: React.MouseEvent, edge: Edge) => {
+    // For cross-network edges, open the API client with pre-filled data
+    if (edge.id.startsWith('e-http-') && edge.data?.omniEdge) {
+      const omniEdge = edge.data.omniEdge as OmniEdge;
+      // Parse method + URL from edge label (format: "GET /api/users")
+      const parts = omniEdge.label.match(/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(.+)$/i);
+      if (parts) {
+        apiClient.prefill(parts[1].toUpperCase() as HttpMethod, parts[2]);
+      } else {
+        apiClient.prefill('GET', omniEdge.label);
+      }
+      setActiveTab('api-client');
+
+      // Also start a flow trace
+      flowTracer.startTrace(omniEdge);
+    }
+  }, [apiClient, flowTracer]);
 
   const onPaneClick = useCallback(() => {
     setSelected(null);
   }, []);
+
+  /** Switch from flow tracer to API client with data from the traced edge */
+  const handleFlowOpenInApiClient = useCallback(() => {
+    if (flowTracer.trace) {
+      const httpStep = flowTracer.trace.steps.find(s => s.type === 'http-call');
+      if (httpStep) {
+        const parts = httpStep.description.match(/Makes\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+(.+)\s+call$/i);
+        if (parts) {
+          apiClient.prefill(parts[1].toUpperCase() as HttpMethod, parts[2]);
+        }
+      }
+    }
+    setActiveTab('api-client');
+  }, [flowTracer.trace, apiClient]);
 
   if (loading) {
     return (
@@ -204,6 +296,7 @@ function GraphApp() {
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onNodeClick={onNodeClick}
+          onEdgeClick={onEdgeClick}
           onNodeDrag={isForceActive ? forceDrag : undefined}
           onNodeDragStop={isForceActive ? forceDragStop : undefined}
           onPaneClick={onPaneClick}
@@ -221,6 +314,8 @@ function GraphApp() {
         </ReactFlow>
       </div>
       <Sidebar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
         layoutPreset={layoutPreset}
         onLayoutChange={setLayoutPreset}
         mindmapDirection={mindmapDirection}
@@ -237,6 +332,31 @@ function GraphApp() {
         onExportPng={exportPng}
         onExportSvg={exportSvg}
         onExportJson={exportJson}
+        // API Client
+        apiRequest={apiClient.request}
+        apiResponse={apiClient.response}
+        apiLoading={apiClient.loading}
+        apiError={apiClient.error}
+        onApiMethodChange={apiClient.setMethod}
+        onApiUrlChange={apiClient.setUrl}
+        onApiSetHeader={apiClient.setHeader}
+        onApiRemoveHeader={apiClient.removeHeader}
+        onApiSetQueryParam={apiClient.setQueryParam}
+        onApiRemoveQueryParam={apiClient.removeQueryParam}
+        onApiBodyChange={apiClient.setBody}
+        onApiSend={apiClient.send}
+        onApiReset={apiClient.reset}
+        // Flow Tracer
+        flowTrace={flowTracer.trace}
+        flowCurrentStepIndex={flowTracer.currentStepIndex}
+        onFlowStepForward={flowTracer.stepForward}
+        onFlowStepBackward={flowTracer.stepBackward}
+        onFlowGoToStep={flowTracer.goToStep}
+        onFlowStop={() => {
+          flowTracer.stopTrace();
+          setActiveTab('controls');
+        }}
+        onFlowOpenInApiClient={handleFlowOpenInApiClient}
       />
     </div>
   );

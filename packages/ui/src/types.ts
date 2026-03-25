@@ -1,1 +1,11 @@
-export type { OmniNode, OmniEdge, OmniGraph } from '@omnigraph/types';
+export type {
+  OmniNode,
+  OmniEdge,
+  OmniGraph,
+  HttpMethod,
+  ProxyRequest,
+  ProxyResponse,
+  FlowStepType,
+  FlowTraceStep,
+  FlowTrace,
+} from '@omnigraph/types';
