@@ -1,6 +1,9 @@
 import express from 'express';
 import * as fs from 'fs';
+import * as http from 'http';
+import * as https from 'https';
 import path from 'path';
+import { URL } from 'url';
 import rateLimit from 'express-rate-limit';
 import { parseDirectory } from '@omnigraph/parsers';
 
@@ -18,9 +21,15 @@ const staticRateLimit = rateLimit({
   legacyHeaders: false,
 });
 
+/** Safe hostnames allowed for the proxy endpoint (SSRF prevention) */
+const ALLOWED_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
+
 export function createServer(targetPath: string, port: number = 3000): void {
   const resolvedTarget = path.resolve(targetPath);
   const app = express();
+
+  // Parse JSON bodies for the proxy endpoint
+  app.use(express.json({ limit: '1mb' }));
 
   app.get('/api/graph', apiRateLimit, (_req, res) => {
     try {
@@ -68,6 +77,144 @@ export function createServer(targetPath: string, port: number = 3000): void {
       });
     } catch (err) {
       res.status(500).json({ error: String(err) });
+    }
+  });
+
+  /**
+   * Proxy endpoint for the API debugger.
+   * Forwards HTTP requests to localhost targets only (SSRF prevention).
+   */
+  app.post('/api/proxy', apiRateLimit, async (req, res) => {
+    try {
+      const { method, url, headers, queryParams, body } = req.body;
+
+      if (!method || !url) {
+        res.status(400).json({ error: 'Missing required fields: method, url' });
+        return;
+      }
+
+      // Parse and validate the target URL
+      let targetUrl: URL;
+      try {
+        targetUrl = new URL(url);
+      } catch {
+        // If no protocol, assume http://localhost
+        try {
+          targetUrl = new URL(`http://localhost:${port}${url.startsWith('/') ? url : '/' + url}`);
+        } catch {
+          res.status(400).json({ error: 'Invalid URL' });
+          return;
+        }
+      }
+
+      // SSRF prevention: only allow localhost targets
+      if (!ALLOWED_HOSTS.has(targetUrl.hostname)) {
+        res.status(403).json({
+          error: `Proxy only allows requests to localhost. Got: ${targetUrl.hostname}`,
+        });
+        return;
+      }
+
+      // Append query params
+      if (queryParams && typeof queryParams === 'object') {
+        for (const [key, value] of Object.entries(queryParams)) {
+          if (key && value) targetUrl.searchParams.set(key, String(value));
+        }
+      }
+
+      // Build outbound request options
+      const isHttps = targetUrl.protocol === 'https:';
+      const transport = isHttps ? https : http;
+      const outboundHeaders: Record<string, string> = {};
+
+      if (headers && typeof headers === 'object') {
+        for (const [key, value] of Object.entries(headers)) {
+          if (key && value) outboundHeaders[key.toLowerCase()] = String(value);
+        }
+      }
+
+      // Set content-type for requests with body
+      if (body && !outboundHeaders['content-type']) {
+        outboundHeaders['content-type'] = 'application/json';
+      }
+
+      const startTime = Date.now();
+
+      const proxyResponse = await new Promise<{
+        statusCode: number;
+        statusText: string;
+        headers: Record<string, string>;
+        body: string;
+        duration: number;
+      }>((resolve, reject) => {
+        const proxyReq = transport.request(
+          targetUrl.toString(),
+          {
+            method: method.toUpperCase(),
+            headers: outboundHeaders,
+            timeout: 30000, // 30 second timeout
+          },
+          (proxyRes) => {
+            const chunks: Buffer[] = [];
+            let totalSize = 0;
+            const MAX_BODY = 5 * 1024 * 1024; // 5MB limit
+
+            proxyRes.on('data', (chunk: Buffer) => {
+              totalSize += chunk.length;
+              if (totalSize <= MAX_BODY) {
+                chunks.push(chunk);
+              }
+            });
+
+            proxyRes.on('end', () => {
+              const duration = Date.now() - startTime;
+              const responseBody = Buffer.concat(chunks).toString('utf-8');
+
+              // Flatten response headers
+              const responseHeaders: Record<string, string> = {};
+              for (const [key, value] of Object.entries(proxyRes.headers)) {
+                responseHeaders[key] = Array.isArray(value) ? value.join(', ') : (value ?? '');
+              }
+
+              resolve({
+                statusCode: proxyRes.statusCode ?? 0,
+                statusText: proxyRes.statusMessage ?? '',
+                headers: responseHeaders,
+                body: totalSize > MAX_BODY ? '[Response truncated — exceeds 5MB]' : responseBody,
+                duration,
+              });
+            });
+
+            proxyRes.on('error', reject);
+          },
+        );
+
+        proxyReq.on('error', (err) => {
+          reject(new Error(`Connection failed: ${err.message}`));
+        });
+
+        proxyReq.on('timeout', () => {
+          proxyReq.destroy();
+          reject(new Error('Request timed out (30s)'));
+        });
+
+        // Send the request body
+        if (body) {
+          proxyReq.write(typeof body === 'string' ? body : JSON.stringify(body));
+        }
+        proxyReq.end();
+      });
+
+      res.json(proxyResponse);
+    } catch (err) {
+      const duration = 0;
+      res.status(502).json({
+        statusCode: 0,
+        statusText: 'Proxy Error',
+        headers: {},
+        body: String(err instanceof Error ? err.message : err),
+        duration,
+      });
     }
   });
 
