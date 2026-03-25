@@ -2,56 +2,68 @@
 
 A multi-language, AST-driven dependency visualizer for complex codebases.
 
-OmniGraph is a local developer tool that statically analyzes full-stack monorepos and generates an interactive, Obsidian-style dependency graph. It maps out how files, functions, and framework-specific modules (like NestJS controllers or NextJS pages) connect.
+OmniGraph is a local developer tool that statically analyzes full-stack monorepos and generates an interactive, Obsidian-style dependency graph. It maps out how files, functions, and framework-specific modules (like NestJS controllers or Next.js pages) connect.
 
-## Local Development Setup
+## Quick Start
 
-1. **Prerequisites:** Node.js >= 18 and npm >= 9.
+**Prerequisites:** Node.js >= 18, npm >= 9
 
-2. **Clone the repo and install dependencies:**
-   ```bash
-   npm install
-   ```
+```bash
+# Install dependencies
+npm install
 
-2. **Build all packages:**
-   ```bash
-   npm run build
-   ```
+# Build all packages
+npm run build
 
-3. **Build the frontend visualizer:**
-   ```bash
-   cd packages/ui && npm run build
-   ```
+# Build the frontend
+cd packages/ui && npm run build && cd ../..
 
-4. **Run the CLI against a target repository:**
-   ```bash
-   npm run dev -- --path ../my-nestjs-project
-   ```
-   Or after building:
-   ```bash
-   node packages/cli/dist/index.js --path /path/to/repo --port 3000
-   ```
+# Analyze a repository
+npm run dev -- --path ../my-nestjs-project
+```
+
+Then open `http://localhost:3000` in your browser.
+
+### CLI Options
+
+```
+omnigraph --path <repo-path>          # Required: path to analyze
+omnigraph --path <repo-path> --port 4000  # Optional: custom port (default 3000)
+```
+
+## What It Does
+
+- Parses TypeScript/TSX files and extracts import relationships as graph edges
+- Detects NestJS decorators (`@Controller`, `@Injectable`, `@Module`) and classifies nodes by type
+- Renders an interactive graph with pan, zoom, drag, minimap, and node inspection
+- Color-codes nodes: red (controller), blue (injectable), orange (module), green (TS file)
 
 ## How to Add a New Language Parser
 
-OmniGraph is extensible by design. To add support for a new framework:
+OmniGraph is extensible by design. To add support for a new language or framework:
 
-1. Navigate to `/packages/parsers`.
-2. Create a new class implementing the `IParser` interface in `src/IParser.ts`.
-3. Write your Tree-sitter queries to extract `OmniNode`s and `OmniEdge`s.
-4. Register your parser in `src/parser-registry.ts`.
+1. Navigate to `packages/parsers/src/`
+2. Create a new class implementing the `IParser` interface from `src/IParser.ts`
+3. Implement `canHandle(filePath)` to match your file extensions
+4. Implement `parse(filePath, source)` to return `{ nodes, edges }` in the OmniGraph format
+5. Register your parser instance in the `parsers` array in `src/parser-registry.ts`
+
+No changes to the server, CLI, or UI are needed — the plugin architecture handles the rest.
 
 ## Technology Stack
 
 | Component | Technology |
 |-----------|-----------|
 | CLI / Core | Node.js + TypeScript + Commander |
-| Code Parser | @typescript-eslint/typescript-estree |
+| Code Parser (Phase 1) | @typescript-eslint/typescript-estree |
+| Code Parser (Phase 2) | Tree-sitter (planned) |
 | Local Server | Express.js |
 | Frontend UI | React + Vite |
 | Graph Engine | React Flow |
 
 ## Omni JSON Schema
+
+The backend converts all parsed code into this standardized structure:
 
 ```json
 {
@@ -76,3 +88,12 @@ OmniGraph is extensible by design. To add support for a new framework:
   ]
 }
 ```
+
+## Project Documentation
+
+| Document | Description |
+|----------|-------------|
+| [PRD](docs/PRD.md) | Product requirements, features, and roadmap |
+| [SAD](docs/SAD.md) | Software architecture, data flow, and design decisions |
+| [ADR-001](docs/adr/ADR-001-parsing-engine.md) | Why typescript-estree (Phase 1) and Tree-sitter (Phase 2) |
+| [API Spec](docs/API-SPEC.md) | HTTP endpoint and CLI interface documentation |
