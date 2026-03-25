@@ -1,6 +1,7 @@
 import { IParser } from '../IParser';
 import { OmniGraph, OmniNode, OmniEdge } from '../types';
 import { parse } from '@typescript-eslint/typescript-estree';
+import * as fs from 'fs';
 import * as path from 'path';
 
 /** Minimal shape of a decorator node as emitted by typescript-estree */
@@ -42,9 +43,32 @@ function extractNestJSInfo(
   return null;
 }
 
+const RESOLVE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx'];
+
+/** Resolve a relative import to an actual file path on disk */
+function resolveImport(fromFile: string, importPath: string): string | null {
+  const base = path.normalize(path.join(path.dirname(fromFile), importPath));
+
+  // If import already has an extension and exists, use it directly
+  if (path.extname(base) && fs.existsSync(base)) return base;
+
+  // Try appending extensions: ./foo → ./foo.ts, ./foo.tsx, etc.
+  for (const ext of RESOLVE_EXTENSIONS) {
+    if (fs.existsSync(base + ext)) return base + ext;
+  }
+
+  // Try index files: ./foo → ./foo/index.ts, etc.
+  for (const ext of RESOLVE_EXTENSIONS) {
+    const indexPath = path.join(base, `index${ext}`);
+    if (fs.existsSync(indexPath)) return indexPath;
+  }
+
+  return null;
+}
+
 export class TypeScriptParser implements IParser {
   canHandle(filePath: string): boolean {
-    return /\.(ts|tsx)$/.test(filePath);
+    return /\.(ts|tsx|js|jsx)$/.test(filePath);
   }
 
   parse(filePath: string, source: string): Partial<OmniGraph> {
@@ -55,14 +79,16 @@ export class TypeScriptParser implements IParser {
     try {
       ast = parse(source, { jsx: true, errorRecovery: true });
     } catch {
+      const fallbackType = /\.(js|jsx)$/.test(filePath) ? 'javascript-file' : 'typescript-file';
       return {
-        nodes: [{ id: fileId, type: 'typescript-file', label, metadata: { filePath, route: '' } }],
+        nodes: [{ id: fileId, type: fallbackType, label, metadata: { filePath, route: '' } }],
         edges: [],
       };
     }
 
     const edges: OmniEdge[] = [];
-    let nodeType = 'typescript-file';
+    const isJS = /\.(js|jsx)$/.test(filePath);
+    let nodeType = isJS ? 'javascript-file' : 'typescript-file';
     let route = '';
 
     for (const stmt of ast.body) {
@@ -70,27 +96,34 @@ export class TypeScriptParser implements IParser {
       if (stmt.type === 'ImportDeclaration') {
         const src = stmt.source.value as string;
         if (src.startsWith('./') || src.startsWith('../')) {
-          let targetId = path.normalize(
-            path.join(path.dirname(filePath), src)
-          ).replace(/\\/g, '/');
-          if (!path.extname(targetId)) targetId += '.ts';
-          edges.push({
-            id: `e-${fileId}->${targetId}`,
-            source: fileId,
-            target: targetId,
-            label: 'imports',
-          });
+          const resolved = resolveImport(filePath, src);
+          if (resolved) {
+            const targetId = resolved.replace(/\\/g, '/');
+            edges.push({
+              id: `e-${fileId}->${targetId}`,
+              source: fileId,
+              target: targetId,
+              label: 'imports',
+            });
+          }
         }
       }
 
       // Detect NestJS decorators on exported or top-level class declarations
-      const isExportedClass =
-        stmt.type === 'ExportNamedDeclaration' &&
-        stmt.declaration?.type === 'ClassDeclaration';
-      const isTopLevelClass = stmt.type === 'ClassDeclaration';
+      let classNode: unknown = null;
+      if (stmt.type === 'ExportNamedDeclaration' && stmt.declaration?.type === 'ClassDeclaration') {
+        classNode = stmt.declaration;
+      } else if (stmt.type === 'ClassDeclaration') {
+        classNode = stmt;
+      }
 
-      if (isExportedClass || isTopLevelClass) {
-        const decorators = hasDecorators(stmt) ? (stmt.decorators ?? []) : [];
+      if (classNode) {
+        // Decorators can be on the class node or on the export statement
+        const decorators = hasDecorators(classNode)
+          ? (classNode.decorators ?? [])
+          : hasDecorators(stmt)
+            ? (stmt.decorators ?? [])
+            : [];
         const nestInfo = extractNestJSInfo(decorators);
         if (nestInfo) {
           nodeType = nestInfo.nodeType;
