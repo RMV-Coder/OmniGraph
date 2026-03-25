@@ -1,7 +1,7 @@
 # API Specification
 
 **Project:** OmniGraph
-**Version:** 1.0.0
+**Version:** 2.0.0
 **Base URL:** `http://localhost:{port}` (default port: 3000)
 
 ## Endpoints
@@ -29,12 +29,15 @@ Returns the full dependency graph for the analyzed repository.
       }
     },
     {
-      "id": "C:/path/to/repo/src/users/users.service.ts",
-      "type": "nestjs-injectable",
-      "label": "users.service",
+      "id": "C:/path/to/repo/app/routers/users.py",
+      "type": "python-fastapi-route",
+      "label": "users",
       "metadata": {
-        "filePath": "C:\\path\\to\\repo\\src\\users\\users.service.ts",
-        "route": ""
+        "filePath": "C:\\path\\to\\repo\\app\\routers\\users.py",
+        "route": "GET /users, POST /users",
+        "language": "python",
+        "framework": "fastapi",
+        "functions": "list_users, create_user"
       }
     }
   ],
@@ -57,6 +60,54 @@ Returns the full dependency graph for the analyzed repository.
 }
 ```
 
+### GET /api/file
+
+Returns the raw source content of a single file within the analyzed repository. Used by the node inspector to display code snippets.
+
+**Rate Limit:** 30 requests per minute (per IP, shared with `/api/graph`)
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | Yes | Absolute file path to read |
+
+**Security:**
+- The resolved path must be within the target directory (path traversal is rejected with 403)
+- Files larger than 1MB are rejected with 413
+- Only files (not directories) are served
+
+**Response (200 OK):**
+
+```json
+{
+  "path": "C:\\path\\to\\repo\\src\\users\\users.controller.ts",
+  "content": "import { Controller } from '@nestjs/common';\n\n@Controller('/users')\nexport class UsersController {\n  // ...\n}\n",
+  "lines": 6,
+  "size": 128
+}
+```
+
+**Response (400 Bad Request):** Missing `path` parameter
+```json
+{ "error": "Missing \"path\" query parameter" }
+```
+
+**Response (403 Forbidden):** Path outside target directory
+```json
+{ "error": "Path is outside the analyzed directory" }
+```
+
+**Response (404 Not Found):** File does not exist
+```json
+{ "error": "File not found" }
+```
+
+**Response (413 Payload Too Large):** File exceeds 1MB
+```json
+{ "error": "File too large (max 1MB)" }
+```
+
 ### GET * (SPA Fallback)
 
 Serves the built React UI from `packages/ui/dist`. Any path not matching `/api/*` returns `index.html` for client-side routing.
@@ -74,7 +125,7 @@ Serves the built React UI from `packages/ui/dist`. Any path not matching `/api/*
 | `id` | string | Normalized file path with forward slashes. Unique identifier. |
 | `type` | string | Node classification. See Node Types below. |
 | `label` | string | File basename without extension (e.g., `users.controller`). |
-| `metadata` | object | Key-value pairs. Always includes `filePath` and `route`. |
+| `metadata` | object | Key-value pairs. Always includes `filePath`. Other fields vary by parser. |
 
 ### OmniEdge
 
@@ -82,17 +133,27 @@ Serves the built React UI from `packages/ui/dist`. Any path not matching `/api/*
 |-------|------|-------------|
 | `id` | string | Format: `e-{source}->{target}` |
 | `source` | string | Source node ID (the file containing the import). |
-| `target` | string | Target node ID (the imported file). Resolved with `.ts` extension if missing. |
-| `label` | string | Relationship type. Currently always `"imports"`. |
+| `target` | string | Target node ID (the imported file). |
+| `label` | string | Relationship type: `"imports"` or `"requires"`. |
 
-### Node Types (Phase 1)
+### Node Types
 
-| Type | Trigger | Metadata |
-|------|---------|----------|
-| `typescript-file` | Default for any `.ts`/`.tsx` file | `filePath`, `route: ""` |
-| `nestjs-controller` | Class with `@Controller()` decorator | `filePath`, `route` (from decorator argument) |
-| `nestjs-injectable` | Class with `@Injectable()` decorator | `filePath`, `route: ""` |
-| `nestjs-module` | Class with `@Module()` decorator | `filePath`, `route: ""` |
+| Type | Language | Trigger | Metadata |
+|------|----------|---------|----------|
+| `typescript-file` | TypeScript | Default for `.ts`/`.tsx` | `filePath`, `route` |
+| `javascript-file` | JavaScript | Default for `.js`/`.jsx` | `filePath`, `route` |
+| `nestjs-controller` | TypeScript | `@Controller()` decorator | `filePath`, `route` (from decorator arg) |
+| `nestjs-injectable` | TypeScript | `@Injectable()` decorator | `filePath`, `route` |
+| `nestjs-module` | TypeScript | `@Module()` decorator | `filePath`, `route` |
+| `python-file` | Python | Default for `.py` | `filePath`, `route`, `language`, `classes`, `functions` |
+| `python-fastapi-route` | Python | `@router.get()` etc. | `filePath`, `route`, `language`, `framework`, `functions` |
+| `python-django-view` | Python | Class extends `View`/`APIView` | `filePath`, `route`, `language`, `framework`, `classes` |
+| `python-django-model` | Python | Class extends `Model` | `filePath`, `route`, `language`, `framework`, `classes` |
+| `php-file` | PHP | Default for `.php` | `filePath`, `route`, `language`, `namespace`, `classes`, `methods` |
+| `php-laravel-controller` | PHP | `extends Controller` | `filePath`, `route`, `language`, `framework`, `namespace`, `classes`, `methods` |
+| `php-laravel-model` | PHP | `extends Model` | `filePath`, `route`, `language`, `framework`, `namespace`, `classes` |
+| `php-laravel-middleware` | PHP | `extends Middleware` | `filePath`, `route`, `language`, `framework`, `namespace`, `classes` |
+| `php-laravel-route` | PHP | Route file with `Route::` calls | `filePath`, `route`, `language`, `framework` |
 
 ## CLI Interface
 
@@ -107,3 +168,16 @@ Options:
   -V, --version   Output the version number
   -h, --help      Display help for command
 ```
+
+## Export Formats
+
+The UI supports three export formats via the sidebar:
+
+### PNG Export
+Downloads a 2x resolution PNG image of the current graph viewport. Background color: `#1a1a2e`. Excludes minimap and controls overlay.
+
+### SVG Export
+Downloads an SVG of the current graph viewport. Suitable for high-quality prints and further editing in vector graphics tools.
+
+### JSON Export
+Downloads the raw `OmniGraph` JSON (nodes + edges) as returned by `/api/graph`. Can be used for further processing, CI integration, or import into other tools.

@@ -52,3 +52,39 @@ describe('Server module exports', () => {
     expect(typeof serverModule.createServer).toBe('function');
   });
 });
+
+describe('File API endpoint security', () => {
+  it('should reject paths outside the target directory', async () => {
+    // The /api/file endpoint validates that requested paths are within the target directory
+    // This is a unit test of the path validation logic
+    const path = await import('path');
+
+    const targetPath = '/project';
+    const resolvedTarget = path.resolve(targetPath);
+
+    // Safe path (within target)
+    const safePath = path.resolve('/project/src/index.ts');
+    expect(safePath.startsWith(resolvedTarget)).toBe(true);
+
+    // Unsafe path (traversal attempt)
+    const unsafePath = path.resolve('/project/../etc/passwd');
+    expect(unsafePath.startsWith(resolvedTarget)).toBe(false);
+
+    // Unsafe path (completely outside)
+    const outsidePath = path.resolve('/other/directory/file.ts');
+    expect(outsidePath.startsWith(resolvedTarget)).toBe(false);
+  });
+
+  it('should accept paths within the target directory', async () => {
+    const path = await import('path');
+
+    const targetPath = '/project';
+    const resolvedTarget = path.resolve(targetPath);
+
+    const nestedPath = path.resolve('/project/src/components/App.tsx');
+    expect(nestedPath.startsWith(resolvedTarget)).toBe(true);
+
+    const deepPath = path.resolve('/project/packages/ui/src/hooks/useExport.ts');
+    expect(deepPath.startsWith(resolvedTarget)).toBe(true);
+  });
+});

@@ -46,10 +46,10 @@ Modern full-stack monorepos have deeply nested dependency chains that span langu
 | # | Feature | Description | Status |
 |---|---------|-------------|--------|
 | F12 | Cross-Network Tracing | Heuristics to link frontend HTTP calls (e.g., Axios URLs) to backend route handlers | Not Started |
-| F13 | Code Snippets in Inspector | Show raw source code of the selected node in the inspector panel | Not Started |
+| F13 | Code Snippets in Inspector | Show raw source code of the selected node in the inspector panel with syntax highlighting (keywords, strings, decorators, comments) via new `/api/file` endpoint with path traversal protection | ✅ Done |
 | F14 | Search & Filter | Search nodes by name, filter by type with color-coded toggle chips, highlight matching nodes and dim non-matches | ✅ Done |
 | F15 | Layout Presets | 5 layout algorithms: Directory (grouped by folder), Hierarchical (dagre TB), Force-Directed (live d3-force simulation with drag physics), Grid, Mind Map (dagre LR/RL) | ✅ Done |
-| F16 | Export | Export graph as SVG, PNG, or JSON | Not Started |
+| F16 | Export | Export graph as PNG (2x resolution), SVG, or JSON via sidebar buttons using `html-to-image` | ✅ Done |
 | F17 | npm Global Install | Publish to npm so users can run `npx omnigraph --path .` without cloning | Not Started |
 | F18 | Sidebar Controls | Right sidebar drawer with layout selector, search/filter, and node inspector below a divider — keeps the canvas clean | ✅ Done |
 | F19 | Live Force Simulation | Force-directed layout uses a live d3-force simulation with drag-to-push physics — nearby nodes react dynamically when dragging | ✅ Done |
