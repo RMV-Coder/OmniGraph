@@ -3,13 +3,18 @@
   "version": "1.0.0",
   "private": true,
   "workspaces": ["packages/*"],
+  "bin": {
+    "omnigraph": "packages/cli/dist/index.js"
+  },
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
-    "dev": "node packages/cli/dist/index.js"
+    "build": "npm run build -w @omnigraph/types && npm run build -w @omnigraph/parsers && npm run build -w @omnigraph/server && npm run build -w @omnigraph/cli && npm run build -w @omnigraph/ui",
+    "dev": "node packages/cli/dist/index.js",
+    "test": "vitest run"
   },
   "devDependencies": {
     "typescript": "^5.4.5",
     "ts-node": "^10.9.2",
+    "vitest": "^1.6.0",
     "@types/node": "^20.12.7"
   }
 }

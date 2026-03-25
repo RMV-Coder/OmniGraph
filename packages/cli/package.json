@@ -1,9 +1,26 @@
 {
   "name": "@omnigraph/cli",
   "version": "1.0.0",
+  "description": "A multi-language, AST-driven dependency visualizer for complex codebases",
   "bin": {
     "omnigraph": "dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "dependency-graph",
+    "code-visualizer",
+    "ast",
+    "typescript",
+    "nestjs",
+    "static-analysis"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RMV-Coder/OmniGraph"
+  },
+  "license": "MIT",
   "scripts": {
     "build": "tsc"
   },
