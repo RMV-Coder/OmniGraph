@@ -54,8 +54,19 @@ Modern full-stack monorepos have deeply nested dependency chains that span langu
 | F18 | Sidebar Controls | Right sidebar drawer with layout selector, search/filter, and node inspector below a divider — keeps the canvas clean | ✅ Done |
 | F19 | Live Force Simulation | Force-directed layout uses a live d3-force simulation with drag-to-push physics — nearby nodes react dynamically when dragging | ✅ Done |
 | F20 | Dangling Edge Filtering | Edges whose source or target node doesn't exist are automatically filtered out | ✅ Done |
+| F21 | API Debugger | Postman-inspired API client in the sidebar. Click a cross-network edge to auto-fill method + URL, edit headers/params/body, send requests via server proxy (localhost-only SSRF protection), view responses with status, headers, body, and duration. | ✅ Done |
+| F22 | Flow Tracer | Cisco Packet Tracer-inspired step-through visualization. Click a cross-network edge to trace the full path: upstream callers → HTTP call → route handler → downstream dependencies. Back/Next navigation with animated node highlighting and edge glow. | ✅ Done |
+| F23 | Tabbed Sidebar | Sidebar refactored into three tabs: Graph (controls + inspector), API (debugger), Trace (flow tracer). Width adapts per tab (280px controls, 380px API/trace). | ✅ Done |
 
-## 7. Non-Goals
+## 7. Phase 4 — Future Enhancements
+
+| # | Feature | Description | Status |
+|---|---------|-------------|--------|
+| F24 | WebSocket Tracing | Detect and visualize WebSocket connections between frontend and backend nodes | Not Started |
+| F25 | Database Integration | Detect database queries (MySQL, PostgreSQL, MongoDB) and link them to handler nodes | Not Started |
+| F26 | npm Global Install | Publish to npm so users can run `npx omnigraph --path .` without cloning | Not Started |
+
+## 8. Non-Goals
 
 - Runtime analysis (this is purely static/AST-based)
 - Replacing IDE features like Go to Definition or Find References
