@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is OmniGraph?
 
-A local developer tool that statically analyzes codebases and generates an interactive dependency graph. It parses TypeScript/NestJS code (Phase 1) and renders an Obsidian-style visualization using React Flow. Phase 2 will add multi-language support via Tree-sitter.
+A local developer tool that statically analyzes codebases and generates an interactive dependency graph. It parses TypeScript/NestJS, Python/FastAPI/Django, and PHP/Laravel code and renders an Obsidian-style visualization using React Flow.
 
 ## Build & Run Commands
 
@@ -33,8 +33,8 @@ CLI (@omnigraph/cli) → Server (@omnigraph/server) → Parsers (@omnigraph/pars
 - **packages/types** — Shared `OmniNode`, `OmniEdge`, `OmniGraph` interfaces. Must build first.
 - **packages/cli** — Commander.js entry point. Accepts `--path` (required) and `--port` (optional). Calls `createServer()` from server package.
 - **packages/server** — Express app with two routes: `GET /api/graph` (rate-limited 30 req/min) calls `parseDirectory()`, and `GET *` serves the built UI (rate-limited 200 req/min) from `../../ui/dist`.
-- **packages/parsers** — Core parsing logic. `parser-registry.ts` walks directories recursively, respects `.gitignore`, delegates to registered parsers, and deduplicates nodes. Currently only `TypeScriptParser` is registered (handles `.ts`, `.tsx`, `.js`, `.jsx`).
-- **packages/ui** — React + Vite SPA. Fetches `/api/graph`, renders with React Flow. Node colors: red (controller), blue (injectable), orange (module), green (ts-file), yellow (js-file).
+- **packages/parsers** — Core parsing logic. `parser-registry.ts` walks directories recursively, respects `.gitignore`, delegates to registered parsers, and deduplicates nodes. Three parsers registered: `TypeScriptParser` (`.ts`/`.tsx`/`.js`/`.jsx`), `PythonParser` (`.py`), `PhpParser` (`.php`).
+- **packages/ui** — React + Vite SPA. Fetches `/api/graph`, renders with React Flow. Node colors per type: red (controller), blue (injectable), orange (module), green (ts-file), yellow (js-file), blue (python), teal (FastAPI), dark-green (Django view), purple (PHP), red (Laravel controller/model/middleware/route).
 
 ### Parser Plugin System
 
@@ -44,9 +44,13 @@ The `IParser` interface (`canHandle(filePath)` + `parse(filePath, source)`) is t
 
 The core data model is `OmniGraph = { nodes: OmniNode[], edges: OmniEdge[] }` defined in `packages/types/src/index.ts` and re-exported by parsers and UI.
 
-### TypeScript Parser Details
+### Parser Details
 
-Uses `@typescript-eslint/typescript-estree` for AST parsing (see ADR-001 for rationale). Handles `.ts`/`.tsx`/`.js`/`.jsx` files. Resolves imports by trying extensions (`.ts`, `.tsx`, `.js`, `.jsx`) and index files. Detects NestJS decorators (@Controller, @Injectable, @Module) to set node types and metadata (e.g., route paths).
+**TypeScript Parser** — Uses `@typescript-eslint/typescript-estree` for AST parsing (see ADR-001). Handles `.ts`/`.tsx`/`.js`/`.jsx` files. Resolves imports by trying extensions and index files. Detects NestJS decorators (@Controller, @Injectable, @Module) to set node types and metadata.
+
+**Python Parser** — Regex-based parsing for `.py` files. Detects FastAPI/Flask route decorators (@app.get, @router.post, etc.), Django class-based views (extends View/APIView/ViewSet), and Django models. Resolves relative and absolute Python imports using package `__init__.py` conventions.
+
+**PHP Parser** — Regex-based parsing for `.php` files. Detects Laravel controllers (extends Controller), models (extends Model/Eloquent), middleware, and route definitions (Route::get, etc.). Resolves `use` statements via PSR-4 conventions and `require`/`include` statements.
 
 ## Key Constraints
 
