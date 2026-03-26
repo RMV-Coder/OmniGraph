@@ -64,7 +64,7 @@ Modern full-stack monorepos have deeply nested dependency chains that span langu
 |---|---------|-------------|--------|
 | F24 | WebSocket Tracing | Detect and visualize WebSocket connections between frontend and backend nodes | Not Started |
 | F25 | Database Integration | Detect database queries (MySQL, PostgreSQL, MongoDB) and link them to handler nodes | Not Started |
-| F26 | npm Global Install | Publish to npm so users can run `npx omnigraph --path .` without cloning | Not Started |
+| F26 | npm Global Install | Publish to npm via esbuild-bundled standalone package. `npm run bundle` produces a `publish/` directory with single-file CLI (12MB, includes typescript-estree), pre-built UI, and ready-to-publish package.json. Users can run `npx omnigraph --path .` without cloning. | ✅ Done |
 
 ## 8. Non-Goals
 

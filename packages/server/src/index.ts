@@ -218,10 +218,16 @@ export function createServer(targetPath: string, port: number = 3000): void {
     }
   });
 
-  // Serve the built UI
-  const uiDistPath = path.resolve(__dirname, '../../ui/dist');
+  // Serve the built UI — resolve from multiple possible locations:
+  // 1. Published package: omnigraph/dist/cli.js → omnigraph/ui/
+  // 2. Monorepo dev:      packages/server/dist/index.js → packages/ui/dist/
+  const uiCandidates = [
+    path.resolve(__dirname, '../ui'),         // published bundle
+    path.resolve(__dirname, '../../ui/dist'), // monorepo
+  ];
+  const uiDistPath = uiCandidates.find(p => fs.existsSync(p)) ?? uiCandidates[1];
   if (!fs.existsSync(uiDistPath)) {
-    console.warn(`[OmniGraph] UI dist not found at ${uiDistPath}. Run: cd packages/ui && npm run build`);
+    console.warn(`[OmniGraph] UI dist not found. Run: cd packages/ui && npm run build`);
   }
   app.use(express.static(uiDistPath));
 
