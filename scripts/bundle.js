@@ -95,7 +95,7 @@ async function main() {
   const cliPkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/cli/package.json'), 'utf-8'));
 
   const publishPkg = {
-    name: 'omnigraph',
+    name: '@rmv-coder/omnigraph',
     version: rootPkg.version || '1.0.0',
     description: 'A multi-language, AST-driven dependency visualizer for complex codebases. Parses TypeScript/NestJS, Python/FastAPI/Django, and PHP/Laravel and renders an interactive dependency graph.',
     bin: {
