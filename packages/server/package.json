@@ -6,13 +6,16 @@
     "build": "tsc"
   },
   "dependencies": {
+    "@omnigraph/parsers": "*",
     "express": "^4.19.2",
     "express-rate-limit": "^8.3.1",
-    "@omnigraph/parsers": "*"
+    "mongodb": "^7.1.1",
+    "pg": "^8.20.0"
   },
   "devDependencies": {
-    "typescript": "^5.4.5",
+    "@types/express": "^4.17.21",
     "@types/node": "^20.12.7",
-    "@types/express": "^4.17.21"
+    "@types/pg": "^8.20.0",
+    "typescript": "^5.4.5"
   }
 }

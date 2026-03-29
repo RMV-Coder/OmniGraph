@@ -9,8 +9,11 @@ import CodeViewer from './CodeViewer';
 import ApiClientPanel from './sidebar/ApiClientPanel';
 import FlowTracerPanel from './sidebar/FlowTracerPanel';
 import SettingsPanel from './sidebar/SettingsPanel';
+import DatabasePanel from './sidebar/DatabasePanel';
+import type { SavedConnection } from '../hooks/useDatabase';
+import type { DatabaseSavedConnection, DatabaseSchema, DatabaseTable, DatabaseQueryResult, DatabaseEnvConnection } from '../types';
 
-export type SidebarTab = 'controls' | 'api-client' | 'flow-tracer' | 'settings';
+export type SidebarTab = 'controls' | 'api-client' | 'flow-tracer' | 'database' | 'settings';
 
 const NODE_TYPE_LABELS: Record<string, string> = {
   'nestjs-controller': 'Controller',
@@ -34,6 +37,9 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   'php-laravel-model': 'Laravel Model',
   'php-laravel-middleware': 'Laravel Middleware',
   'php-laravel-route': 'Laravel Route',
+  'db-table': 'DB Table',
+  'db-collection': 'DB Collection',
+  'db-view': 'DB View',
 };
 
 const selectStyle: React.CSSProperties = {
@@ -151,6 +157,28 @@ interface Props {
   onResetGraph: () => void;
   onResetSearch: () => void;
   onResetAll: () => void;
+  // Database
+  dbConnections: SavedConnection[];
+  dbActiveConnectionId: string | null;
+  dbSchema: DatabaseSchema | null;
+  dbSchemaLoading: boolean;
+  dbSchemaError: string | null;
+  dbQueryResult: DatabaseQueryResult | null;
+  dbQueryLoading: boolean;
+  dbQueryError: string | null;
+  dbEnvConnections: DatabaseEnvConnection[];
+  dbEnvLoading: boolean;
+  onDbAddConnection: (config: DatabaseSavedConnection) => void;
+  onDbUpdateConnection: (id: string, patch: Partial<DatabaseSavedConnection>) => void;
+  onDbRemoveConnection: (id: string) => void;
+  onDbConnectWithCredentials: (id: string, username: string, password: string) => void;
+  onDbConnectFromEnv: (env: DatabaseEnvConnection) => void;
+  onDbConnectFromCustomKey: (key: string) => Promise<string | null>;
+  onDbDisconnect: (id: string) => void;
+  onDbLoadSchema: (id: string) => void;
+  onDbExecuteQuery: (query: string, limit?: number) => void;
+  onDbClearQuery: () => void;
+  onDbSelectTable?: (table: DatabaseTable) => void;
 }
 
 // ─── Tab Bar ─────────────────────────────────────────────────────────
@@ -168,6 +196,7 @@ function TabBar({
     { key: 'controls', label: 'Graph', icon: '\u{1F4CA}', show: true },
     { key: 'api-client', label: 'API', icon: '\u{1F4E1}', show: true },
     { key: 'flow-tracer', label: 'Trace', icon: '\u{1F50D}', show: hasTrace },
+    { key: 'database', label: 'DB', icon: '\u{1F5C4}', show: true },
     { key: 'settings', label: 'Settings', icon: '\u{2699}', show: true },
   ];
 
@@ -534,63 +563,126 @@ function ControlsPanel({
               background: NODE_COLORS[selectedNode.type] ?? '#888', borderRadius: 4,
               padding: '2px 8px', fontSize: 10, color: '#fff', display: 'inline-block',
             }}>
-              {selectedNode.type}
+              {NODE_TYPE_LABELS[selectedNode.type] ?? selectedNode.type}
             </span>
           </div>
-          <div>
-            <p style={labelStyle}>File Path</p>
-            <p style={{ fontSize: 11, color: '#e0e0e0', wordBreak: 'break-all', margin: 0 }}>
-              {selectedNode.metadata.filePath ?? selectedNode.id}
-            </p>
-          </div>
-          {selectedNode.metadata.route && (
-            <div>
-              <p style={labelStyle}>Route</p>
-              <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.route}</p>
-            </div>
+
+          {/* DB Node Inspector */}
+          {selectedNode.id.startsWith('db://') ? (
+            <>
+              <div>
+                <p style={labelStyle}>Engine</p>
+                <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>
+                  {selectedNode.metadata.engine === 'postgresql' ? '\u{1F418} PostgreSQL' : '\u{1F343} MongoDB'}
+                </p>
+              </div>
+              <div>
+                <p style={labelStyle}>Database</p>
+                <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.database}</p>
+              </div>
+              {selectedNode.metadata.schema && (
+                <div>
+                  <p style={labelStyle}>Schema</p>
+                  <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.schema}</p>
+                </div>
+              )}
+              {selectedNode.metadata.rowCount && (
+                <div>
+                  <p style={labelStyle}>Row Count</p>
+                  <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>
+                    {Number(selectedNode.metadata.rowCount).toLocaleString()}
+                  </p>
+                </div>
+              )}
+              {selectedNode.metadata.columns && (
+                <div>
+                  <p style={labelStyle}>Columns ({selectedNode.metadata.columnCount})</p>
+                  <div style={{
+                    fontSize: 10,
+                    fontFamily: 'monospace',
+                    color: '#aaa',
+                    background: '#111125',
+                    borderRadius: 4,
+                    padding: '6px 8px',
+                    maxHeight: 200,
+                    overflowY: 'auto',
+                  }}>
+                    {selectedNode.metadata.columns.split(', ').map((col) => (
+                      <div key={col} style={{ padding: '1px 0' }}>{col}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {selectedNode.metadata.indexCount && Number(selectedNode.metadata.indexCount) > 0 && (
+                <div>
+                  <p style={labelStyle}>Indexes</p>
+                  <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.indexCount}</p>
+                </div>
+              )}
+              <div>
+                <p style={labelStyle}>Node ID</p>
+                <p style={{ fontSize: 11, color: '#888', wordBreak: 'break-all', margin: 0 }}>{selectedNode.id}</p>
+              </div>
+            </>
+          ) : (
+            /* Code Node Inspector */
+            <>
+              <div>
+                <p style={labelStyle}>File Path</p>
+                <p style={{ fontSize: 11, color: '#e0e0e0', wordBreak: 'break-all', margin: 0 }}>
+                  {selectedNode.metadata.filePath ?? selectedNode.id}
+                </p>
+              </div>
+              {selectedNode.metadata.route && (
+                <div>
+                  <p style={labelStyle}>Route</p>
+                  <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.route}</p>
+                </div>
+              )}
+              {selectedNode.metadata.language && (
+                <div>
+                  <p style={labelStyle}>Language</p>
+                  <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.language}</p>
+                </div>
+              )}
+              {selectedNode.metadata.framework && (
+                <div>
+                  <p style={labelStyle}>Framework</p>
+                  <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.framework}</p>
+                </div>
+              )}
+              {selectedNode.metadata.namespace && (
+                <div>
+                  <p style={labelStyle}>Namespace</p>
+                  <p style={{ fontSize: 11, color: '#e0e0e0', wordBreak: 'break-all', margin: 0 }}>{selectedNode.metadata.namespace}</p>
+                </div>
+              )}
+              {selectedNode.metadata.classes && (
+                <div>
+                  <p style={labelStyle}>Classes</p>
+                  <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.classes}</p>
+                </div>
+              )}
+              {selectedNode.metadata.functions && (
+                <div>
+                  <p style={labelStyle}>Functions</p>
+                  <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.functions}</p>
+                </div>
+              )}
+              {selectedNode.metadata.methods && (
+                <div>
+                  <p style={labelStyle}>Methods</p>
+                  <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.methods}</p>
+                </div>
+              )}
+              <div>
+                <p style={labelStyle}>Node ID</p>
+                <p style={{ fontSize: 11, color: '#888', wordBreak: 'break-all', margin: 0 }}>{selectedNode.id}</p>
+              </div>
+              <div style={dividerStyle} />
+              <CodeViewer filePath={selectedNode.metadata.filePath ?? selectedNode.id} />
+            </>
           )}
-          {selectedNode.metadata.language && (
-            <div>
-              <p style={labelStyle}>Language</p>
-              <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.language}</p>
-            </div>
-          )}
-          {selectedNode.metadata.framework && (
-            <div>
-              <p style={labelStyle}>Framework</p>
-              <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.framework}</p>
-            </div>
-          )}
-          {selectedNode.metadata.namespace && (
-            <div>
-              <p style={labelStyle}>Namespace</p>
-              <p style={{ fontSize: 11, color: '#e0e0e0', wordBreak: 'break-all', margin: 0 }}>{selectedNode.metadata.namespace}</p>
-            </div>
-          )}
-          {selectedNode.metadata.classes && (
-            <div>
-              <p style={labelStyle}>Classes</p>
-              <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.classes}</p>
-            </div>
-          )}
-          {selectedNode.metadata.functions && (
-            <div>
-              <p style={labelStyle}>Functions</p>
-              <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.functions}</p>
-            </div>
-          )}
-          {selectedNode.metadata.methods && (
-            <div>
-              <p style={labelStyle}>Methods</p>
-              <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.methods}</p>
-            </div>
-          )}
-          <div>
-            <p style={labelStyle}>Node ID</p>
-            <p style={{ fontSize: 11, color: '#888', wordBreak: 'break-all', margin: 0 }}>{selectedNode.id}</p>
-          </div>
-          <div style={dividerStyle} />
-          <CodeViewer filePath={selectedNode.metadata.filePath ?? selectedNode.id} />
         </div>
       ) : (
         <div style={{ padding: '10px 16px' }}>
@@ -634,6 +726,13 @@ export default function Sidebar(props: Props) {
     // Settings
     settings, onUpdateEdgeLabels, onUpdateGraph, onUpdateSearch,
     onResetEdgeLabels, onResetGraph, onResetSearch, onResetAll,
+    // Database
+    dbConnections, dbActiveConnectionId, dbSchema, dbSchemaLoading, dbSchemaError,
+    dbQueryResult, dbQueryLoading, dbQueryError,
+    dbEnvConnections, dbEnvLoading,
+    onDbAddConnection, onDbUpdateConnection, onDbRemoveConnection,
+    onDbConnectWithCredentials, onDbConnectFromEnv, onDbConnectFromCustomKey, onDbDisconnect, onDbLoadSchema,
+    onDbExecuteQuery, onDbClearQuery, onDbSelectTable,
   } = props;
 
   const [sidebarWidth, setSidebarWidth] = useState(loadSavedWidth);
@@ -752,6 +851,32 @@ export default function Sidebar(props: Props) {
             onOpenInApiClient={onFlowOpenInApiClient}
           />
         </div>
+      )}
+
+      {activeTab === 'database' && (
+        <DatabasePanel
+          connections={dbConnections}
+          activeConnectionId={dbActiveConnectionId}
+          schema={dbSchema}
+          schemaLoading={dbSchemaLoading}
+          schemaError={dbSchemaError}
+          queryResult={dbQueryResult}
+          queryLoading={dbQueryLoading}
+          queryError={dbQueryError}
+          envConnections={dbEnvConnections}
+          envLoading={dbEnvLoading}
+          onAddConnection={onDbAddConnection}
+          onUpdateConnection={onDbUpdateConnection}
+          onRemoveConnection={onDbRemoveConnection}
+          onConnectWithCredentials={onDbConnectWithCredentials}
+          onConnectFromEnv={onDbConnectFromEnv}
+          onConnectFromCustomKey={onDbConnectFromCustomKey}
+          onDisconnect={onDbDisconnect}
+          onLoadSchema={onDbLoadSchema}
+          onExecuteQuery={onDbExecuteQuery}
+          onClearQuery={onDbClearQuery}
+          onSelectTable={onDbSelectTable}
+        />
       )}
 
       {activeTab === 'settings' && (

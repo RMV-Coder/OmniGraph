@@ -302,6 +302,10 @@ export default function SettingsPanel({
           <Toggle checked={edgeLabels.showHttpLabels} onChange={(v) => onUpdateEdgeLabels({ showHttpLabels: v })} />
         </SettingRow>
 
+        <SettingRow label="Show &quot;queries&quot;">
+          <Toggle checked={edgeLabels.showQueriesLabels} onChange={(v) => onUpdateEdgeLabels({ showQueriesLabels: v })} />
+        </SettingRow>
+
         <div style={{ height: 4 }} />
 
         <SettingRow label="Label color">

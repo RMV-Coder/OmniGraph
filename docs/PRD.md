@@ -1,9 +1,9 @@
 # Product Requirements Document (PRD)
 
 **Project:** OmniGraph
-**Version:** 3.0.0
+**Version:** 4.0.0
 **Date:** March 2026
-**Status:** Phase 2 — Complete, Phase 3 — Complete
+**Status:** Phase 2 — Complete, Phase 3 — Complete, Phase 4 — In Progress
 
 ## 1. Product Overview
 
@@ -65,41 +65,58 @@ Modern full-stack monorepos have deeply nested dependency chains that span langu
 | F32 | Clickable Minimap | MiniMap with `zoomable` and `pannable` props for direct navigation | ✅ Done |
 | F33 | Next.js Detection | TypeScript parser extended to detect Next.js App Router (`route.ts`, `page.tsx`, `layout.tsx`) and Pages Router (`pages/api/`) with dedicated node types and colors | ✅ Done |
 
-## 7. Phase 4 — Future Enhancements
+## 7. Phase 4 — Database & Connectivity
 
 | # | Feature | Description | Status |
 |---|---------|-------------|--------|
-| F24 | WebSocket Tracing | Detect and visualize WebSocket connections between frontend and backend nodes | Not Started |
-| F25 | Database Integration | Detect database queries (MySQL, PostgreSQL, MongoDB) and link them to handler nodes | Not Started |
+| F25 | Database Integration | Live database connectivity (PostgreSQL, MongoDB) with schema introspection, query runner, and graph visualization. Tables/collections appear as nodes connected to code files that reference them. Server-side `pg` and `mongodb` drivers with stateless per-request connections. New sidebar "Database" tab with connection manager, schema browser, and query runner. See ADR-004. | In Progress |
 | F26 | npm Global Install | Publish to npm via esbuild-bundled standalone package. `npm run bundle` produces a `publish/` directory with single-file CLI (12MB, includes typescript-estree), pre-built UI, and ready-to-publish package.json. Users can run `npx omnigraph --path .` without cloning. | ✅ Done |
 
-## 8. Non-Goals
+## 8. Phase 5 — Future Enhancements
 
-- Runtime analysis (this is purely static/AST-based)
+| # | Feature | Description | Status |
+|---|---------|-------------|--------|
+| F24 | WebSocket Tracing | Detect and visualize WebSocket connections (socket.io, ws, Django Channels, Laravel Broadcasting) between frontend and backend nodes | Not Started |
+| F34 | Next.js Cross-Network Edges | Enhance cross-network tracing to fully resolve App Router `route.ts` API handlers — match frontend `fetch()` calls to `app/api/**/route.ts` handlers | Not Started |
+| F35 | Tree-sitter Parsing | Replace regex-based Python/PHP parsers with Tree-sitter for more accurate AST analysis, enabling method-level call graphs | Not Started |
+| F36 | Method-Level Call Graphs | Extend graph granularity from file/class level to individual function/method calls within files | Not Started |
+
+## 9. Non-Goals
+
 - Replacing IDE features like Go to Definition or Find References
 - Cloud deployment or SaaS hosting — OmniGraph runs locally
-- Method-level call graphs (operates at the file/class level; method-level is a future goal)
 
-## 8. Success Criteria
+## 10. Success Criteria
 
 - A developer can run `omnigraph --path <any-project>` and see a correct, interactive dependency graph in their browser within seconds
 - Adding a new language parser requires only implementing `IParser` and registering it — no changes to server, CLI, or UI
 - The tool correctly identifies framework-specific patterns (NestJS controllers, FastAPI routes, Laravel controllers) with their metadata
 - Works across TypeScript, JavaScript, Python, and PHP codebases
 - Graph is navigable with multiple layout options and searchable by node name/type
+- Users can connect to live PostgreSQL and MongoDB databases and see schema entities on the graph
 
-## 9. Supported Languages & Frameworks
+## 11. Supported Languages & Frameworks
 
 | Language | Extensions | Frameworks Detected |
 |----------|-----------|-------------------|
-| TypeScript | `.ts`, `.tsx` | NestJS (`@Controller`, `@Injectable`, `@Module`) |
+| TypeScript | `.ts`, `.tsx` | NestJS (`@Controller`, `@Injectable`, `@Module`), Next.js (App Router, Pages Router) |
 | JavaScript | `.js`, `.jsx` | — |
 | Python | `.py` | FastAPI (`@router.get`, `@app.post`), Flask (`@app.route`), Django (Views, Models) |
 | PHP | `.php` | Laravel (Controllers, Models, Middleware, Routes) |
+| Markdown | `.md`, `.mdx` | Obsidian (wiki-links, embeds, frontmatter) |
 
-## 10. Architecture Decision Records
+## 12. Supported Database Engines
+
+| Engine | Driver | Capabilities |
+|--------|--------|-------------|
+| PostgreSQL | `pg` (node-postgres) | Schema introspection (tables, views, columns, indexes), query execution (read-only), row count |
+| MongoDB | `mongodb` (official driver) | Schema inference via document sampling, collection listing, find queries |
+
+## 13. Architecture Decision Records
 
 | ADR | Decision |
 |-----|----------|
 | [ADR-001](adr/ADR-001-parsing-engine.md) | Phase 1 uses `typescript-estree` for TypeScript AST; Tree-sitter reserved for future use |
 | [ADR-002](adr/ADR-002-phase2-multi-language-parsing.md) | Phase 2 uses regex-based parsing for Python/PHP — zero native deps, sufficient for file-level analysis |
+| [ADR-003](adr/ADR-003-markdown-obsidian-parser.md) | Markdown parser with Obsidian-style vault-wide BFS resolution for wiki-links |
+| [ADR-004](adr/ADR-004-database-integration.md) | Live database connectivity via stateless per-request connections with pg and mongodb drivers |

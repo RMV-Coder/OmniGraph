@@ -6,6 +6,7 @@ import path from 'path';
 import { URL } from 'url';
 import rateLimit from 'express-rate-limit';
 import { parseDirectory } from '@omnigraph/parsers';
+import { createDbRouter } from './db';
 
 const apiRateLimit = rateLimit({
   windowMs: 60 * 1000,
@@ -217,6 +218,9 @@ export function createServer(targetPath: string, port: number = 3000): void {
       });
     }
   });
+
+  // Database integration routes
+  app.use('/api/db', apiRateLimit, createDbRouter(resolvedTarget));
 
   // Serve the built UI — resolve from multiple possible locations:
   // 1. Published package: omnigraph/dist/cli.js → omnigraph/ui/

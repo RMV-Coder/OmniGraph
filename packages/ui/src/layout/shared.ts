@@ -22,6 +22,10 @@ export const NODE_COLORS: Record<string, string> = {
   'markdown-moc': '#a855f7',        // Lighter purple for Maps of Content
   'markdown-daily': '#6d28d9',      // Darker purple for daily notes
   'markdown-readme': '#8b5cf6',     // Mid purple for README
+  // Database
+  'db-table': '#336791',         // PostgreSQL blue
+  'db-collection': '#4DB33D',    // MongoDB green
+  'db-view': '#8e44ad',          // Purple for views
   // PHP
   'php-file': '#777bb4',
   'php-laravel-controller': '#ff2d20',
@@ -53,6 +57,24 @@ export function styleNode(n: OmniNode, overrides?: Partial<Node>): Node {
 
 export function styleEdge(e: OmniEdge): Edge {
   const isHttpEdge = e.id.startsWith('e-http-');
+  const isDbEdge = e.id.startsWith('e-db-');
+  let stroke = '#888';
+  let strokeWidth = 1;
+  let strokeDasharray: string | undefined;
+  let labelFill: string | undefined;
+
+  if (isHttpEdge) {
+    stroke = '#ff9800';
+    strokeWidth = 2;
+    strokeDasharray = '6 3';
+    labelFill = '#ff9800';
+  } else if (isDbEdge) {
+    stroke = '#336791';
+    strokeWidth = 2;
+    strokeDasharray = '4 4';
+    labelFill = '#336791';
+  }
+
   return {
     id: e.id,
     source: e.source,
@@ -60,12 +82,8 @@ export function styleEdge(e: OmniEdge): Edge {
     label: e.label,
     data: { omniEdge: e },
     animated: true,
-    style: {
-      stroke: isHttpEdge ? '#ff9800' : '#888',
-      strokeWidth: isHttpEdge ? 2 : 1,
-      strokeDasharray: isHttpEdge ? '6 3' : undefined,
-    },
-    labelStyle: isHttpEdge ? { fill: '#ff9800', fontSize: 10, fontWeight: 600 } : undefined,
+    style: { stroke, strokeWidth, strokeDasharray },
+    labelStyle: labelFill ? { fill: labelFill, fontSize: 10, fontWeight: 600 } : undefined,
   };
 }
 

@@ -19,7 +19,7 @@ import {
   forceLink as d3ForceLink,
 } from 'd3-force';
 import type { SimulationNodeDatum } from 'd3-force';
-import type { OmniGraph, OmniNode, OmniEdge, HttpMethod } from './types';
+import type { OmniGraph, OmniNode, OmniEdge, HttpMethod, DatabaseSchema, DatabaseTable } from './types';
 import Sidebar from './components/Sidebar';
 import type { SidebarTab } from './components/Sidebar';
 import DirectoryGroupNode from './components/DirectoryGroupNode';
@@ -31,6 +31,7 @@ import { useExport } from './hooks/useExport';
 import { useApiClient } from './hooks/useApiClient';
 import { useFlowTracer } from './hooks/useFlowTracer';
 import { useSettings } from './hooks/useSettings';
+import { useDatabase } from './hooks/useDatabase';
 
 const nodeTypes = { directoryGroup: DirectoryGroupNode };
 
@@ -42,6 +43,100 @@ const COMPACT_TRANSITION_CSS = `
   transition: transform 0.45s ease-out !important;
 }
 `;
+
+/**
+ * Merge database schema entities into the code graph.
+ * Creates OmniNode entries for each table/collection and OmniEdge entries
+ * linking code nodes that reference them (by table name match in metadata or label).
+ */
+function mergeDbSchema(
+  codeGraph: OmniGraph,
+  schema: DatabaseSchema | null,
+): OmniGraph {
+  if (!schema || schema.tables.length === 0) return codeGraph;
+
+  const dbNodes: OmniNode[] = [];
+  const dbEdges: OmniEdge[] = [];
+
+  for (const table of schema.tables) {
+    const nodeType =
+      table.type === 'collection' ? 'db-collection' :
+      table.type === 'view' ? 'db-view' : 'db-table';
+
+    const schemaPrefix = table.schema && table.schema !== 'public' ? `${table.schema}.` : '';
+    const nodeId = `db://${schema.engine}/${schema.database}/${table.schema ?? 'default'}/${table.name}`;
+
+    dbNodes.push({
+      id: nodeId,
+      type: nodeType,
+      label: `${schemaPrefix}${table.name}`,
+      metadata: {
+        engine: schema.engine,
+        database: schema.database,
+        schema: table.schema ?? '',
+        columns: table.columns.map((c) => c.name).join(', '),
+        columnCount: String(table.columns.length),
+        rowCount: table.rowCount != null ? String(table.rowCount) : '',
+        indexCount: String(table.indexes.length),
+      },
+    });
+  }
+
+  // Match code nodes to DB tables by checking if the code node's label or metadata
+  // references a table name. This is heuristic-based (similar to cross-network tracing).
+  const tableNames = new Map<string, string>(); // lowercase table name → nodeId
+  for (const table of schema.tables) {
+    const nodeId = `db://${schema.engine}/${schema.database}/${table.schema ?? 'default'}/${table.name}`;
+    tableNames.set(table.name.toLowerCase(), nodeId);
+  }
+
+  for (const codeNode of codeGraph.nodes) {
+    // Check metadata for DB references (dbTables, or model/entity patterns)
+    const dbTablesStr = codeNode.metadata.dbTables;
+    if (dbTablesStr) {
+      for (const tableName of dbTablesStr.split(',').map((s) => s.trim().toLowerCase())) {
+        const dbNodeId = tableNames.get(tableName);
+        if (dbNodeId) {
+          dbEdges.push({
+            id: `e-db-${codeNode.id}-${dbNodeId}`,
+            source: codeNode.id,
+            target: dbNodeId,
+            label: 'queries',
+          });
+        }
+      }
+    }
+
+    // Heuristic: check if node type is a model/entity and the label matches a table name
+    const isModelType =
+      codeNode.type === 'python-django-model' ||
+      codeNode.type === 'php-laravel-model';
+
+    if (isModelType) {
+      // Django models often map to lowercase+plural table names, but try exact + lowercase
+      const label = codeNode.label.toLowerCase().replace(/[-_]/g, '');
+      for (const [tName, tNodeId] of tableNames) {
+        const normalized = tName.toLowerCase().replace(/[-_]/g, '');
+        if (normalized === label || normalized === label + 's' || normalized + 's' === label) {
+          const edgeId = `e-db-${codeNode.id}-${tNodeId}`;
+          if (!dbEdges.some((e) => e.id === edgeId)) {
+            dbEdges.push({
+              id: edgeId,
+              source: codeNode.id,
+              target: tNodeId,
+              label: 'queries',
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    nodes: [...codeGraph.nodes, ...dbNodes],
+    edges: [...codeGraph.edges, ...dbEdges],
+  };
+}
 
 /** Determine which node IDs match the current search + type filters */
 function getMatchingIds(
@@ -400,15 +495,23 @@ function GraphApp() {
 
   const isForceActive = layoutPreset === 'force';
 
-  const { exportPng, exportSvg, exportJson, exportGif, gifProgress } = useExport(graphData);
+  const db = useDatabase();
+
+  // Merge code graph + DB schema into one unified graph
+  const mergedGraphData = useMemo<OmniGraph | null>(() => {
+    if (!graphData) return null;
+    return mergeDbSchema(graphData, db.schema);
+  }, [graphData, db.schema]);
+
+  const { exportPng, exportSvg, exportJson, exportGif, gifProgress } = useExport(mergedGraphData);
   const apiClient = useApiClient();
-  const flowTracer = useFlowTracer(graphData);
+  const flowTracer = useFlowTracer(mergedGraphData);
 
   const availableTypes = useMemo(() => {
-    if (!graphData) return [];
-    const types = new Set(graphData.nodes.map(n => n.type));
+    if (!mergedGraphData) return [];
+    const types = new Set(mergedGraphData.nodes.map(n => n.type));
     return Array.from(types).sort();
-  }, [graphData]);
+  }, [mergedGraphData]);
 
   useEffect(() => {
     if (availableTypes.length > 0 && activeTypes.size === 0) {
@@ -419,17 +522,17 @@ function GraphApp() {
   // Compute matching IDs (shared by both layout modes)
   const isFiltering = searchQuery !== '' || activeTypes.size !== availableTypes.length;
   const matchingIds = useMemo(() => {
-    if (!graphData) return new Set<string>();
-    let ids = getMatchingIds(graphData, searchQuery, activeTypes);
+    if (!mergedGraphData) return new Set<string>();
+    let ids = getMatchingIds(mergedGraphData, searchQuery, activeTypes);
     if (searchQuery !== '' && ids.size > 0) {
-      ids = expandConnectedIds(ids, graphData.edges, searchDepth);
+      ids = expandConnectedIds(ids, mergedGraphData.edges, searchDepth);
     }
     return ids;
-  }, [graphData, searchQuery, activeTypes, searchDepth]);
+  }, [mergedGraphData, searchQuery, activeTypes, searchDepth]);
 
   // Force simulation — receives filter params so it can apply them inline during ticks
   const { onNodeDrag: forceDrag, onNodeDragStop: forceDragStop } = useForceSimulation({
-    graphData,
+    graphData: mergedGraphData,
     active: isForceActive,
     setNodes,
     setEdges,
@@ -452,7 +555,7 @@ function GraphApp() {
   }, []);
 
   useEffect(() => {
-    if (!graphData) return;
+    if (!mergedGraphData) return;
     if (isForceActive) {
       setLayoutNodes([]);
       setLayoutEdges([]);
@@ -460,21 +563,22 @@ function GraphApp() {
       return;
     }
     const options = { mindmapDirection };
-    const result = applyLayout(layoutPreset, graphData, options);
+    const result = applyLayout(layoutPreset, mergedGraphData, options);
     setLayoutNodes(result.nodes);
     setLayoutEdges(result.edges);
     setTimeout(() => fitView({ padding: 0.1 }), 50);
-  }, [graphData, layoutPreset, mindmapDirection]);
+  }, [mergedGraphData, layoutPreset, mindmapDirection]);
 
   // Apply edge label settings: hide/show labels based on user preferences
   const applyEdgeLabelSettings = useCallback((edgeList: Edge[]): Edge[] => {
-    const { showImportLabels, showLinksToLabels, showEmbedsLabels, showHttpLabels, labelColor, labelFontSize } = settings.edgeLabels;
+    const { showImportLabels, showLinksToLabels, showEmbedsLabels, showHttpLabels, showQueriesLabels, labelColor, labelFontSize } = settings.edgeLabels;
     return edgeList.map(edge => {
       const label = typeof edge.label === 'string' ? edge.label : '';
       let hideLabel = false;
       if (label === 'imports' && !showImportLabels) hideLabel = true;
       if (label === 'links to' && !showLinksToLabels) hideLabel = true;
       if (label === 'embeds' && !showEmbedsLabels) hideLabel = true;
+      if (label === 'queries' && !showQueriesLabels) hideLabel = true;
       // HTTP labels are things like "GET /api/users", "POST /api/auth/login", etc.
       if (/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+/i.test(label) && !showHttpLabels) hideLabel = true;
 
@@ -520,7 +624,7 @@ function GraphApp() {
 
   // Apply filter + trace styles (non-force layouts) — NO auto-compact
   useEffect(() => {
-    if (!graphData || isForceActive) return;
+    if (!mergedGraphData || isForceActive) return;
 
     // --- Step 1: Filter nodes/edges ---
     let { nodes: styled, edges: styledEdges } = applyFilterStyles(
@@ -765,7 +869,7 @@ function GraphApp() {
         onTypeToggle={handleTypeToggle}
         availableTypes={availableTypes}
         matchCount={matchCount}
-        totalCount={graphData?.nodes.length ?? 0}
+        totalCount={mergedGraphData?.nodes.length ?? 0}
         onCompact={handleCompact}
         isCompacting={isCompacting}
         selectedNode={selected}
@@ -808,6 +912,27 @@ function GraphApp() {
         onResetGraph={resetGraph}
         onResetSearch={resetSearch}
         onResetAll={resetAll}
+        // Database
+        dbConnections={db.connections}
+        dbActiveConnectionId={db.activeConnectionId}
+        dbSchema={db.schema}
+        dbSchemaLoading={db.schemaLoading}
+        dbSchemaError={db.schemaError}
+        dbQueryResult={db.queryResult}
+        dbQueryLoading={db.queryLoading}
+        dbQueryError={db.queryError}
+        dbEnvConnections={db.envConnections}
+        dbEnvLoading={db.envLoading}
+        onDbAddConnection={db.addConnection}
+        onDbUpdateConnection={db.updateConnection}
+        onDbRemoveConnection={db.removeConnection}
+        onDbConnectWithCredentials={db.connectWithCredentials}
+        onDbConnectFromEnv={db.connectFromEnv}
+        onDbConnectFromCustomKey={db.connectFromCustomKey}
+        onDbDisconnect={db.disconnect}
+        onDbLoadSchema={db.loadSchema}
+        onDbExecuteQuery={db.executeQuery}
+        onDbClearQuery={db.clearQuery}
       />
     </div>
   );

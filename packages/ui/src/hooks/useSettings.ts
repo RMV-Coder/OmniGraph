@@ -7,6 +7,7 @@ export interface EdgeLabelSettings {
   showLinksToLabels: boolean;
   showEmbedsLabels: boolean;
   showHttpLabels: boolean;
+  showQueriesLabels: boolean;
   labelColor: string;
   labelFontSize: number;
 }
@@ -35,6 +36,7 @@ export const DEFAULT_EDGE_LABELS: EdgeLabelSettings = {
   showLinksToLabels: false,
   showEmbedsLabels: false,
   showHttpLabels: true,
+  showQueriesLabels: true,
   labelColor: '#888888',
   labelFontSize: 10,
 };

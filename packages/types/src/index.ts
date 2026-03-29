@@ -57,6 +57,108 @@ export interface FlowTrace {
   steps: FlowTraceStep[];
 }
 
+// ─── Database Integration ────────────────────────────────────────────
+
+export type DatabaseEngine = 'postgresql' | 'mongodb';
+
+export interface DatabaseConnectionConfig {
+  id: string;
+  name: string;
+  engine: DatabaseEngine;
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  password: string;
+  ssl?: boolean;
+  authSource?: string;        // MongoDB auth database (default: 'admin')
+}
+
+/**
+ * Non-sensitive connection metadata saved in localStorage.
+ * Credentials (username/password) are NEVER persisted on the client.
+ */
+export interface DatabaseSavedConnection {
+  id: string;
+  name: string;
+  engine: DatabaseEngine;
+  host: string;
+  port: number;
+  database: string;
+  ssl?: boolean;
+  authSource?: string;
+}
+
+/**
+ * Server-side session token returned after successful credential submission.
+ * The token references credentials stored in server memory only.
+ */
+export interface DatabaseSessionToken {
+  token: string;
+  connectionId: string;
+}
+
+/** Auto-detected database connection from .env files */
+export interface DatabaseEnvConnection {
+  source: string;             // e.g. '.env', '.env.local'
+  envKey: string;             // e.g. 'DATABASE_URL', 'MONGO_URI'
+  engine: DatabaseEngine;
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  hasPassword: boolean;       // true if password was found (never sent to client)
+  ssl?: boolean;
+}
+
+export interface DatabaseColumn {
+  name: string;
+  type: string;               // e.g. 'integer', 'varchar(255)', 'ObjectId'
+  nullable: boolean;
+  isPrimaryKey: boolean;
+  defaultValue: string | null;
+}
+
+export interface DatabaseIndex {
+  name: string;
+  columns: string[];
+  unique: boolean;
+}
+
+export interface DatabaseTable {
+  name: string;
+  schema?: string;            // PostgreSQL schema (e.g. 'public')
+  type?: 'table' | 'view' | 'collection';
+  columns: DatabaseColumn[];
+  indexes: DatabaseIndex[];
+  rowCount?: number;
+}
+
+export interface DatabaseSchema {
+  engine: DatabaseEngine;
+  database: string;
+  tables: DatabaseTable[];
+}
+
+export interface DatabaseQueryRequest {
+  connection: DatabaseConnectionConfig;
+  query: string;
+  limit?: number;             // default 100, max 1000
+}
+
+export interface DatabaseQueryResult {
+  columns: string[];
+  rows: Record<string, unknown>[];
+  rowCount: number;
+  duration: number;           // milliseconds
+}
+
+export interface DatabaseConnectResult {
+  success: boolean;
+  error?: string;
+  serverVersion?: string;
+}
+
 // ─── Future Placeholders ─────────────────────────────────────────────
 
 export interface WebSocketConnection {
@@ -64,14 +166,4 @@ export interface WebSocketConnection {
   sourceNodeId: string;
   targetNodeId: string;
   events: string[];
-}
-
-export type DatabaseEngine = 'mysql' | 'postgresql' | 'mongodb';
-
-export interface DatabaseQuery {
-  id: string;
-  nodeId: string;
-  engine: DatabaseEngine;
-  query: string;
-  table: string | null;
 }
