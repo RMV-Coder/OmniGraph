@@ -2,6 +2,7 @@ import { IParser } from './IParser';
 import { TypeScriptParser } from './typescript/typescript-parser';
 import { PythonParser } from './python/python-parser';
 import { PhpParser } from './php/php-parser';
+import { MarkdownParser } from './markdown/markdown-parser';
 import { OmniGraph, OmniNode, OmniEdge } from './types';
 import { detectHttpCalls, matchRoutes } from './cross-network';
 import type { HttpCall } from './cross-network';
@@ -11,8 +12,9 @@ import ignore, { Ignore } from 'ignore';
 
 const pythonParser = new PythonParser();
 const phpParser = new PhpParser();
+const markdownParser = new MarkdownParser();
 
-const parsers: IParser[] = [new TypeScriptParser(), pythonParser, phpParser];
+const parsers: IParser[] = [new TypeScriptParser(), pythonParser, phpParser, markdownParser];
 
 /** Always skip these directories regardless of .gitignore */
 const ALWAYS_SKIP = new Set(['node_modules', '.git', 'dist', '.next', 'build']);
@@ -40,6 +42,7 @@ export function parseDirectory(dirPath: string): OmniGraph {
   // Pass root directory to parsers that need it for import resolution
   pythonParser.setRootDir(dirPath);
   phpParser.setRootDir(dirPath);
+  markdownParser.setRootDir(dirPath);
 
   function walk(dir: string): void {
     const entries = fs.readdirSync(dir, { withFileTypes: true });

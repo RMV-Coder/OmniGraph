@@ -33,8 +33,8 @@ CLI (@omnigraph/cli) → Server (@omnigraph/server) → Parsers (@omnigraph/pars
 - **packages/types** — Shared `OmniNode`, `OmniEdge`, `OmniGraph` interfaces. Must build first.
 - **packages/cli** — Commander.js entry point. Accepts `--path` (required) and `--port` (optional). Calls `createServer()` from server package.
 - **packages/server** — Express app with two routes: `GET /api/graph` (rate-limited 30 req/min) calls `parseDirectory()`, and `GET *` serves the built UI (rate-limited 200 req/min) from `../../ui/dist`.
-- **packages/parsers** — Core parsing logic. `parser-registry.ts` walks directories recursively, respects `.gitignore`, delegates to registered parsers, and deduplicates nodes. Three parsers registered: `TypeScriptParser` (`.ts`/`.tsx`/`.js`/`.jsx`), `PythonParser` (`.py`), `PhpParser` (`.php`).
-- **packages/ui** — React + Vite SPA. Fetches `/api/graph`, renders with React Flow. Node colors per type: red (controller), blue (injectable), orange (module), green (ts-file), yellow (js-file), blue (python), teal (FastAPI), dark-green (Django view), purple (PHP), red (Laravel controller/model/middleware/route).
+- **packages/parsers** — Core parsing logic. `parser-registry.ts` walks directories recursively, respects `.gitignore`, delegates to registered parsers, and deduplicates nodes. Four parsers registered: `TypeScriptParser` (`.ts`/`.tsx`/`.js`/`.jsx`), `PythonParser` (`.py`), `PhpParser` (`.php`), `MarkdownParser` (`.md`/`.mdx`).
+- **packages/ui** — React + Vite SPA. Fetches `/api/graph`, renders with React Flow. Four sidebar tabs (Graph, API, Trace, Settings). Node colors per type: red (controller), blue (injectable), orange (module), green (ts-file), yellow (js-file), blue (python), teal (FastAPI), dark-green (Django view), purple (PHP/Markdown), red (Laravel). Export: PNG, SVG, JSON, animated GIF.
 
 ### Parser Plugin System
 
@@ -51,6 +51,8 @@ The core data model is `OmniGraph = { nodes: OmniNode[], edges: OmniEdge[] }` de
 **Python Parser** — Regex-based parsing for `.py` files. Detects FastAPI/Flask route decorators (@app.get, @router.post, etc.), Django class-based views (extends View/APIView/ViewSet), and Django models. Resolves relative and absolute Python imports using package `__init__.py` conventions.
 
 **PHP Parser** — Regex-based parsing for `.php` files. Detects Laravel controllers (extends Controller), models (extends Model/Eloquent), middleware, and route definitions (Route::get, etc.). Resolves `use` statements via PSR-4 conventions and `require`/`include` statements.
+
+**Markdown Parser** — Regex-based parsing for `.md`/`.mdx` files. Detects Obsidian wiki-links (`[[Page]]`), embeds (`![[Page]]`), standard markdown links, and YAML frontmatter (tags, aliases). Vault-wide BFS resolution for wiki-links (see ADR-003). Node types: `markdown-file`, `markdown-moc`, `markdown-daily`, `markdown-readme`.
 
 ## Key Constraints
 

@@ -1,9 +1,9 @@
 # Product Requirements Document (PRD)
 
 **Project:** OmniGraph
-**Version:** 2.0.0
+**Version:** 3.0.0
 **Date:** March 2026
-**Status:** Phase 2 — Complete, Phase 3 — In Progress
+**Status:** Phase 2 — Complete, Phase 3 — Complete
 
 ## 1. Product Overview
 
@@ -49,14 +49,21 @@ Modern full-stack monorepos have deeply nested dependency chains that span langu
 | F13 | Code Snippets in Inspector | Show raw source code of the selected node in the inspector panel with syntax highlighting (keywords, strings, decorators, comments) via new `/api/file` endpoint with path traversal protection | ✅ Done |
 | F14 | Search & Filter | Search nodes by name, filter by type with color-coded toggle chips, highlight matching nodes and dim non-matches | ✅ Done |
 | F15 | Layout Presets | 5 layout algorithms: Directory (grouped by folder), Hierarchical (dagre TB), Force-Directed (live d3-force simulation with drag physics), Grid, Mind Map (dagre LR/RL) | ✅ Done |
-| F16 | Export | Export graph as PNG (2x resolution), SVG, or JSON via sidebar buttons using `html-to-image` | ✅ Done |
+| F16 | Export | Export graph as PNG (2x), SVG, JSON, or animated GIF (1s 30fps with progress overlay) via export dropdown using `html-to-image` and `gif.js` | ✅ Done |
 | F17 | npm Global Install | Publish to npm so users can run `npx omnigraph --path .` without cloning | Not Started |
 | F18 | Sidebar Controls | Right sidebar drawer with layout selector, search/filter, and node inspector below a divider — keeps the canvas clean | ✅ Done |
 | F19 | Live Force Simulation | Force-directed layout uses a live d3-force simulation with drag-to-push physics — nearby nodes react dynamically when dragging | ✅ Done |
 | F20 | Dangling Edge Filtering | Edges whose source or target node doesn't exist are automatically filtered out | ✅ Done |
 | F21 | API Debugger | Postman-inspired API client in the sidebar. Click a cross-network edge to auto-fill method + URL, edit headers/params/body, send requests via server proxy (localhost-only SSRF protection), view responses with status, headers, body, and duration. | ✅ Done |
 | F22 | Flow Tracer | Cisco Packet Tracer-inspired step-through visualization. Click a cross-network edge to trace the full path: upstream callers → HTTP call → route handler → downstream dependencies. Back/Next navigation with animated node highlighting and edge glow. | ✅ Done |
-| F23 | Tabbed Sidebar | Sidebar refactored into three tabs: Graph (controls + inspector), API (debugger), Trace (flow tracer). Width adapts per tab (280px controls, 380px API/trace). | ✅ Done |
+| F23 | Tabbed Sidebar | Sidebar refactored into four tabs: Graph (controls + inspector), API (debugger), Trace (flow tracer), Settings. Resizable drawer with drag handle. | ✅ Done |
+| F27 | Markdown/Obsidian Parser | `MarkdownParser` for `.md`/`.mdx` files — wiki-links (`[[Page]]`), embeds (`![[Page]]`), YAML frontmatter (tags, aliases), heading extraction. Obsidian-style vault-wide BFS resolution. Node types: file, MOC, daily, readme. See ADR-003. | ✅ Done |
+| F28 | Search Filter BFS Expansion | Search/filter expands matching nodes via BFS depth slider to show connected data flow paths. Works in both directory and force-directed layouts. Hide/Dim mode toggle. | ✅ Done |
+| F29 | Hub-Centric Compaction | Manual compact button pulls visible nodes toward the most-connected hub node(s). Single hub stays pinned; tied hubs meet at their average position. Uses d3-force simulation with link/charge/collide forces. | ✅ Done |
+| F30 | Settings System | Full settings page with localStorage persistence (`omnigraph-settings`). Configurable edge labels (show/hide per type, color, font size), graph options (minimap, animations), search defaults (filter mode, depth). Per-category and global reset. | ✅ Done |
+| F31 | GIF Export | Animated GIF export (1s, 30fps) capturing edge flow animation. Manual stroke-dashoffset control per frame, gif.js web worker encoding. Progress overlay with spinner and percentage bar, canvas interactions disabled during export. | ✅ Done |
+| F32 | Clickable Minimap | MiniMap with `zoomable` and `pannable` props for direct navigation | ✅ Done |
+| F33 | Next.js Detection | TypeScript parser extended to detect Next.js App Router (`route.ts`, `page.tsx`, `layout.tsx`) and Pages Router (`pages/api/`) with dedicated node types and colors | ✅ Done |
 
 ## 7. Phase 4 — Future Enhancements
 

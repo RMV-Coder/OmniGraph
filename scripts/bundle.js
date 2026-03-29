@@ -97,7 +97,7 @@ async function main() {
   const publishPkg = {
     name: '@zoldia/omnigraph',
     version: rootPkg.version || '1.0.0',
-    description: 'A multi-language, AST-driven dependency visualizer for complex codebases. Parses TypeScript/NestJS, Python/FastAPI/Django, and PHP/Laravel and renders an interactive dependency graph.',
+    description: 'A multi-language, AST-driven dependency visualizer for complex codebases. Parses TypeScript/NestJS/Next.js, Python/FastAPI/Django, PHP/Laravel, and Markdown/Obsidian and renders an interactive dependency graph.',
     bin: {
       omnigraph: 'dist/cli.js',
     },
@@ -115,12 +115,16 @@ async function main() {
       'typescript',
       'python',
       'php',
+      'markdown',
       'nestjs',
+      'nextjs',
       'fastapi',
       'django',
       'laravel',
-      'react-flow',
       'obsidian',
+      'wiki-links',
+      'react-flow',
+      'gif-export',
     ],
     repository: {
       type: 'git',

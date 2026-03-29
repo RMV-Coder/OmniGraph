@@ -43,6 +43,149 @@ function extractNestJSInfo(
   return null;
 }
 
+// ─── Next.js Detection ─────────────────────────────────────────────
+
+/** HTTP method names that Next.js App Router recognizes as route handlers */
+const NEXTJS_HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+
+/**
+ * Detect if a file is a Next.js App Router route handler (route.ts/route.js).
+ * Returns the route path derived from the filesystem and the exported HTTP methods.
+ *
+ * Convention: app/api/users/[id]/route.ts → /api/users/:id
+ */
+function detectNextJSAppRoute(filePath: string, exportedNames: string[]): { nodeType: string; route: string } | null {
+  const normalized = filePath.replace(/\\/g, '/');
+  const basename = path.basename(normalized, path.extname(normalized));
+
+  // Must be a route.ts/route.js file
+  if (basename !== 'route') return null;
+
+  // Must be inside an `app/` or `src/app/` directory
+  const appMatch = normalized.match(/(?:^|\/)(src\/)?app\/(.*?)\/route\.\w+$/);
+  if (!appMatch) return null;
+
+  const routeDir = appMatch[2]; // e.g., "api/users/[id]"
+
+  // Convert Next.js dynamic segments to express-style params: [id] → :id, [...slug] → :slug*
+  const routePath = '/' + routeDir
+    .split('/')
+    .map(segment => {
+      // Catch-all: [...slug] or [[...slug]]
+      if (/^\[\[?\.\.\.\w+\]?\]$/.test(segment)) {
+        const name = segment.replace(/[\[\]\.]/g, '');
+        return `:${name}*`;
+      }
+      // Dynamic: [id]
+      if (/^\[\w+\]$/.test(segment)) {
+        return ':' + segment.slice(1, -1);
+      }
+      return segment;
+    })
+    .join('/');
+
+  // Detect which HTTP methods are exported
+  const methods = exportedNames.filter(n => NEXTJS_HTTP_METHODS.includes(n));
+
+  if (methods.length === 0) {
+    // File is named route.ts but no HTTP method exports detected — treat as generic API route
+    return { nodeType: 'nextjs-api-route', route: routePath };
+  }
+
+  // Build route metadata in "METHOD /path" format (comma-separated)
+  const routeEntries = methods.map(m => `${m} ${routePath}`).join(', ');
+  return { nodeType: 'nextjs-api-route', route: routeEntries };
+}
+
+/**
+ * Detect Next.js Pages Router API routes: pages/api/users/[id].ts
+ * Convention: pages/api/... → /api/...
+ */
+function detectNextJSPagesApiRoute(filePath: string, hasDefaultExport: boolean): { nodeType: string; route: string } | null {
+  if (!hasDefaultExport) return null;
+
+  const normalized = filePath.replace(/\\/g, '/');
+  const basename = path.basename(normalized, path.extname(normalized));
+
+  // Must be inside a `pages/api/` or `src/pages/api/` directory
+  const pagesMatch = normalized.match(/(?:^|\/)(src\/)?pages\/api\/(.*?)(\.\w+)$/);
+  if (!pagesMatch) return null;
+
+  let routeSegments = pagesMatch[2]; // e.g., "users/[id]"
+
+  // Handle index files: pages/api/index.ts → /api
+  if (basename === 'index') {
+    routeSegments = routeSegments.replace(/\/?index$/, '');
+  }
+
+  const segments = routeSegments
+    .split('/')
+    .filter(Boolean)
+    .map(segment => {
+      if (/^\[\[?\.\.\.\w+\]?\]$/.test(segment)) {
+        const name = segment.replace(/[\[\]\.]/g, '');
+        return `:${name}*`;
+      }
+      if (/^\[\w+\]$/.test(segment)) {
+        return ':' + segment.slice(1, -1);
+      }
+      return segment;
+    });
+
+  const routePath = segments.length > 0 ? '/api/' + segments.join('/') : '/api';
+
+  return { nodeType: 'nextjs-api-route', route: routePath };
+}
+
+/**
+ * Detect Next.js App Router page components (page.tsx/page.jsx).
+ * Convention: app/dashboard/page.tsx → nextjs-page
+ */
+function detectNextJSPage(filePath: string): { nodeType: string; route: string } | null {
+  const normalized = filePath.replace(/\\/g, '/');
+  const basename = path.basename(normalized, path.extname(normalized));
+
+  if (basename !== 'page') return null;
+
+  const appMatch = normalized.match(/(?:^|\/)(src\/)?app\/(.*?)\/page\.\w+$/);
+  if (!appMatch) return null;
+
+  const routeDir = appMatch[2];
+  const routePath = '/' + routeDir
+    .split('/')
+    .map(segment => {
+      if (/^\[\[?\.\.\.\w+\]?\]$/.test(segment)) {
+        const name = segment.replace(/[\[\]\.]/g, '');
+        return `:${name}*`;
+      }
+      if (/^\[\w+\]$/.test(segment)) {
+        return ':' + segment.slice(1, -1);
+      }
+      return segment;
+    })
+    .join('/');
+
+  return { nodeType: 'nextjs-page', route: routePath };
+}
+
+/**
+ * Detect Next.js App Router layout components (layout.tsx/layout.jsx).
+ */
+function detectNextJSLayout(filePath: string): { nodeType: string; route: string } | null {
+  const normalized = filePath.replace(/\\/g, '/');
+  const basename = path.basename(normalized, path.extname(normalized));
+
+  if (basename !== 'layout') return null;
+
+  // Match app/layout.tsx (root) or app/something/layout.tsx (nested)
+  const appMatch = normalized.match(/(?:^|\/)(src\/)?app\/(.+\/)?layout\.\w+$/);
+  if (!appMatch) return null;
+
+  return { nodeType: 'nextjs-layout', route: '' };
+}
+
+// ─── Shared Utilities ──────────────────────────────────────────────
+
 const RESOLVE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx'];
 
 /** Resolve a relative import to an actual file path on disk */
@@ -65,6 +208,8 @@ function resolveImport(fromFile: string, importPath: string): string | null {
 
   return null;
 }
+
+// ─── Parser ────────────────────────────────────────────────────────
 
 export class TypeScriptParser implements IParser {
   canHandle(filePath: string): boolean {
@@ -91,6 +236,10 @@ export class TypeScriptParser implements IParser {
     let nodeType = isJS ? 'javascript-file' : 'typescript-file';
     let route = '';
 
+    // Track exported names for Next.js detection
+    const exportedNames: string[] = [];
+    let hasDefaultExport = false;
+
     for (const stmt of ast.body) {
       // Extract relative imports
       if (stmt.type === 'ImportDeclaration') {
@@ -107,6 +256,35 @@ export class TypeScriptParser implements IParser {
             });
           }
         }
+      }
+
+      // Track named exports for Next.js App Router detection
+      if (stmt.type === 'ExportNamedDeclaration') {
+        if (stmt.declaration) {
+          const decl = stmt.declaration as unknown as Record<string, unknown>;
+          if (decl.type === 'FunctionDeclaration' && decl.id && typeof (decl.id as unknown as Record<string, unknown>).name === 'string') {
+            exportedNames.push((decl.id as unknown as Record<string, unknown>).name as string);
+          }
+          if (decl.type === 'VariableDeclaration' && Array.isArray(decl.declarations)) {
+            for (const d of decl.declarations as unknown as Array<Record<string, unknown>>) {
+              if (d.id && typeof (d.id as unknown as Record<string, unknown>).name === 'string') {
+                exportedNames.push((d.id as unknown as Record<string, unknown>).name as string);
+              }
+            }
+          }
+        }
+        if (stmt.specifiers) {
+          for (const spec of stmt.specifiers) {
+            if (spec.exported && typeof spec.exported.name === 'string') {
+              exportedNames.push(spec.exported.name);
+            }
+          }
+        }
+      }
+
+      // Track default exports (for Pages Router API routes)
+      if (stmt.type === 'ExportDefaultDeclaration') {
+        hasDefaultExport = true;
       }
 
       // Detect NestJS decorators on exported or top-level class declarations
@@ -129,6 +307,21 @@ export class TypeScriptParser implements IParser {
           nodeType = nestInfo.nodeType;
           route = nestInfo.route;
         }
+      }
+    }
+
+    // ─── Next.js Detection (only if NestJS wasn't detected) ───────
+    if (nodeType === 'typescript-file' || nodeType === 'javascript-file') {
+      // Priority: App Router route → Pages Router API → Page → Layout
+      const nextResult =
+        detectNextJSAppRoute(filePath, exportedNames) ??
+        detectNextJSPagesApiRoute(filePath, hasDefaultExport) ??
+        detectNextJSPage(filePath) ??
+        detectNextJSLayout(filePath);
+
+      if (nextResult) {
+        nodeType = nextResult.nodeType;
+        route = nextResult.route;
       }
     }
 

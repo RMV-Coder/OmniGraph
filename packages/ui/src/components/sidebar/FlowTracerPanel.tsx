@@ -95,7 +95,7 @@ export default function FlowTracerPanel({
           onClick={onStepBackward}
           disabled={currentStepIndex === 0}
         >
-          \u25C0 Back
+          {'\u25C0'} Back
         </button>
         <span
           style={{
@@ -117,7 +117,7 @@ export default function FlowTracerPanel({
           onClick={onStepForward}
           disabled={currentStepIndex >= trace.steps.length - 1}
         >
-          Next \u25B6
+          Next {'\u25B6'}
         </button>
       </div>
 

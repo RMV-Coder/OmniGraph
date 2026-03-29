@@ -1,13 +1,16 @@
-import React from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import type { LayoutPreset, MindmapDirection } from '../layout';
 import { LAYOUT_PRESETS } from '../layout';
 import { NODE_COLORS } from '../layout/shared';
 import type { OmniNode, OmniEdge, HttpMethod, ProxyResponse, FlowTrace } from '../types';
+import type { SearchFilterMode } from '../App';
+import type { AppSettings, EdgeLabelSettings, GraphSettings, SearchSettings } from '../hooks/useSettings';
 import CodeViewer from './CodeViewer';
 import ApiClientPanel from './sidebar/ApiClientPanel';
 import FlowTracerPanel from './sidebar/FlowTracerPanel';
+import SettingsPanel from './sidebar/SettingsPanel';
 
-export type SidebarTab = 'controls' | 'api-client' | 'flow-tracer';
+export type SidebarTab = 'controls' | 'api-client' | 'flow-tracer' | 'settings';
 
 const NODE_TYPE_LABELS: Record<string, string> = {
   'nestjs-controller': 'Controller',
@@ -15,6 +18,13 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   'nestjs-module': 'Module',
   'typescript-file': 'TypeScript',
   'javascript-file': 'JavaScript',
+  'nextjs-api-route': 'Next.js API',
+  'nextjs-page': 'Next.js Page',
+  'nextjs-layout': 'Next.js Layout',
+  'markdown-file': 'Markdown',
+  'markdown-moc': 'Map of Content',
+  'markdown-daily': 'Daily Note',
+  'markdown-readme': 'README',
   'python-file': 'Python',
   'python-fastapi-route': 'FastAPI Route',
   'python-django-view': 'Django View',
@@ -90,11 +100,18 @@ interface Props {
   // Search & filter
   searchQuery: string;
   onSearchChange: (query: string) => void;
+  searchFilterMode: SearchFilterMode;
+  onSearchFilterModeChange: (mode: SearchFilterMode) => void;
+  searchDepth: number;
+  onSearchDepthChange: (depth: number) => void;
   activeTypes: Set<string>;
   onTypeToggle: (type: string) => void;
   availableTypes: string[];
   matchCount: number;
   totalCount: number;
+  // Compact
+  onCompact: () => void;
+  isCompacting: boolean;
   // Inspector
   selectedNode: OmniNode | null;
   onCloseInspector: () => void;
@@ -102,6 +119,7 @@ interface Props {
   onExportPng: () => void;
   onExportSvg: () => void;
   onExportJson: () => void;
+  onExportGif: () => void;
   // API Client
   apiRequest: { method: HttpMethod; url: string; headers: Record<string, string>; queryParams: Record<string, string>; body: string | null };
   apiResponse: ProxyResponse | null;
@@ -124,6 +142,15 @@ interface Props {
   onFlowGoToStep: (index: number) => void;
   onFlowStop: () => void;
   onFlowOpenInApiClient: () => void;
+  // Settings
+  settings: AppSettings;
+  onUpdateEdgeLabels: (patch: Partial<EdgeLabelSettings>) => void;
+  onUpdateGraph: (patch: Partial<GraphSettings>) => void;
+  onUpdateSearch: (patch: Partial<SearchSettings>) => void;
+  onResetEdgeLabels: () => void;
+  onResetGraph: () => void;
+  onResetSearch: () => void;
+  onResetAll: () => void;
 }
 
 // ─── Tab Bar ─────────────────────────────────────────────────────────
@@ -141,6 +168,7 @@ function TabBar({
     { key: 'controls', label: 'Graph', icon: '\u{1F4CA}', show: true },
     { key: 'api-client', label: 'API', icon: '\u{1F4E1}', show: true },
     { key: 'flow-tracer', label: 'Trace', icon: '\u{1F50D}', show: hasTrace },
+    { key: 'settings', label: 'Settings', icon: '\u{2699}', show: true },
   ];
 
   return (
@@ -177,18 +205,120 @@ function TabBar({
   );
 }
 
+// ─── Export Dropdown ─────────────────────────────────────────────────
+
+function ExportDropdown({
+  onExportPng,
+  onExportSvg,
+  onExportJson,
+  onExportGif,
+}: {
+  onExportPng: () => void;
+  onExportSvg: () => void;
+  onExportJson: () => void;
+  onExportGif: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const items = [
+    { label: 'PNG', desc: 'Static image', onClick: onExportPng },
+    { label: 'SVG', desc: 'Vector image', onClick: onExportSvg },
+    { label: 'GIF', desc: '3s animation', onClick: onExportGif },
+    { label: 'JSON', desc: 'Graph data', onClick: onExportJson },
+  ];
+
+  return (
+    <div ref={ref} style={{ position: 'relative', flex: 1 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          ...exportBtnStyle,
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 4,
+        }}
+      >
+        Export
+        <span style={{ fontSize: 8, marginTop: 1 }}>{open ? '\u25B2' : '\u25BC'}</span>
+      </button>
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            bottom: '100%',
+            left: 0,
+            right: 0,
+            marginBottom: 4,
+            background: '#1a1a2e',
+            border: '1px solid #444',
+            borderRadius: 4,
+            overflow: 'hidden',
+            zIndex: 20,
+            boxShadow: '0 -4px 12px rgba(0,0,0,0.4)',
+          }}
+        >
+          {items.map((item) => (
+            <button
+              key={item.label}
+              onClick={() => { item.onClick(); setOpen(false); }}
+              style={{
+                display: 'block',
+                width: '100%',
+                background: 'transparent',
+                color: '#e0e0e0',
+                border: 'none',
+                padding: '7px 12px',
+                fontSize: 11,
+                textAlign: 'left',
+                cursor: 'pointer',
+                transition: 'background 0.1s',
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = '#2a2a4e'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+            >
+              <span style={{ fontWeight: 600 }}>{item.label}</span>
+              <span style={{ color: '#666', marginLeft: 8, fontSize: 10 }}>{item.desc}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Controls Panel ──────────────────────────────────────────────────
 
 function ControlsPanel({
   layoutPreset, onLayoutChange, mindmapDirection, onDirectionChange,
-  searchQuery, onSearchChange, activeTypes, onTypeToggle, availableTypes,
+  searchQuery, onSearchChange, searchFilterMode, onSearchFilterModeChange,
+  searchDepth, onSearchDepthChange,
+  activeTypes, onTypeToggle, availableTypes,
   matchCount, totalCount, selectedNode, onCloseInspector,
-  onExportPng, onExportSvg, onExportJson,
+  onExportPng, onExportSvg, onExportJson, onExportGif,
+  onCompact, isCompacting,
 }: Pick<Props,
   'layoutPreset' | 'onLayoutChange' | 'mindmapDirection' | 'onDirectionChange' |
-  'searchQuery' | 'onSearchChange' | 'activeTypes' | 'onTypeToggle' | 'availableTypes' |
+  'searchQuery' | 'onSearchChange' | 'searchFilterMode' | 'onSearchFilterModeChange' |
+  'searchDepth' | 'onSearchDepthChange' |
+  'activeTypes' | 'onTypeToggle' | 'availableTypes' |
   'matchCount' | 'totalCount' | 'selectedNode' | 'onCloseInspector' |
-  'onExportPng' | 'onExportSvg' | 'onExportJson'
+  'onExportPng' | 'onExportSvg' | 'onExportJson' | 'onExportGif' |
+  'onCompact' | 'isCompacting'
 >) {
   return (
     <>
@@ -250,6 +380,80 @@ function ControlsPanel({
               {matchCount} of {totalCount} nodes
             </span>
           )}
+
+          {/* Search filter settings */}
+          <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {/* Mode toggle: Hide vs Dim */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 10, color: '#666', whiteSpace: 'nowrap' }}>Unmatched:</span>
+              <div style={{
+                display: 'flex',
+                borderRadius: 4,
+                overflow: 'hidden',
+                border: '1px solid #444',
+                flexShrink: 0,
+              }}>
+                <button
+                  onClick={() => onSearchFilterModeChange('hide')}
+                  style={{
+                    background: searchFilterMode === 'hide' ? '#4a90e8' : '#1a1a2e',
+                    color: searchFilterMode === 'hide' ? '#fff' : '#888',
+                    border: 'none',
+                    padding: '3px 10px',
+                    fontSize: 10,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  Hide
+                </button>
+                <button
+                  onClick={() => onSearchFilterModeChange('dim')}
+                  style={{
+                    background: searchFilterMode === 'dim' ? '#4a90e8' : '#1a1a2e',
+                    color: searchFilterMode === 'dim' ? '#fff' : '#888',
+                    border: 'none',
+                    borderLeft: '1px solid #444',
+                    padding: '3px 10px',
+                    fontSize: 10,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  Dim
+                </button>
+              </div>
+            </div>
+
+            {/* Connection depth slider */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 10, color: '#666', whiteSpace: 'nowrap' }}>Depth:</span>
+              <input
+                type="range"
+                min={0}
+                max={5}
+                value={searchDepth}
+                onChange={(e) => onSearchDepthChange(Number(e.target.value))}
+                style={{
+                  flex: 1,
+                  height: 4,
+                  accentColor: '#4a90e8',
+                  cursor: 'pointer',
+                }}
+              />
+              <span style={{
+                fontSize: 10,
+                color: '#e0e0e0',
+                minWidth: 14,
+                textAlign: 'right',
+                fontWeight: 600,
+              }}>
+                {searchDepth}
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Type filter chips */}
@@ -282,13 +486,31 @@ function ControlsPanel({
           </div>
         </div>
 
-        {/* Export */}
+        {/* Export + Compact */}
         <div style={{ marginTop: 10 }}>
-          <p style={labelStyle}>Export</p>
+          <p style={labelStyle}>Actions</p>
           <div style={{ display: 'flex', gap: 6 }}>
-            <button onClick={onExportPng} style={exportBtnStyle}>PNG</button>
-            <button onClick={onExportSvg} style={exportBtnStyle}>SVG</button>
-            <button onClick={onExportJson} style={exportBtnStyle}>JSON</button>
+            <ExportDropdown
+              onExportPng={onExportPng}
+              onExportSvg={onExportSvg}
+              onExportJson={onExportJson}
+              onExportGif={onExportGif}
+            />
+            <button
+              onClick={onCompact}
+              disabled={isCompacting}
+              style={{
+                ...exportBtnStyle,
+                background: isCompacting ? '#333' : '#1a1a2e',
+                color: isCompacting ? '#555' : '#4a90e8',
+                borderColor: isCompacting ? '#333' : '#4a90e8',
+                fontWeight: 600,
+                cursor: isCompacting ? 'default' : 'pointer',
+              }}
+              title="Compact visible nodes together"
+            >
+              Compact
+            </button>
           </div>
         </div>
       </div>
@@ -383,6 +605,22 @@ function ControlsPanel({
 
 // ─── Main Sidebar ────────────────────────────────────────────────────
 
+const DEFAULT_WIDTH = 380;
+const MIN_WIDTH = 260;
+const MAX_WIDTH = 700;
+const STORAGE_KEY = 'omnigraph-sidebar-width';
+
+function loadSavedWidth(): number {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const w = Number(saved);
+      if (w >= MIN_WIDTH && w <= MAX_WIDTH) return w;
+    }
+  } catch { /* ignore */ }
+  return DEFAULT_WIDTH;
+}
+
 export default function Sidebar(props: Props) {
   const {
     activeTab, onTabChange,
@@ -393,9 +631,54 @@ export default function Sidebar(props: Props) {
     // Flow Tracer
     flowTrace, flowCurrentStepIndex,
     onFlowStepForward, onFlowStepBackward, onFlowGoToStep, onFlowStop, onFlowOpenInApiClient,
+    // Settings
+    settings, onUpdateEdgeLabels, onUpdateGraph, onUpdateSearch,
+    onResetEdgeLabels, onResetGraph, onResetSearch, onResetAll,
   } = props;
 
-  const sidebarWidth = activeTab === 'controls' ? 280 : 380;
+  const [sidebarWidth, setSidebarWidth] = useState(loadSavedWidth);
+  const widthRef = useRef(sidebarWidth);
+  const isDragging = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartWidth = useRef(0);
+
+  // Keep ref in sync
+  useEffect(() => { widthRef.current = sidebarWidth; }, [sidebarWidth]);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDragging.current = true;
+    dragStartX.current = e.clientX;
+    dragStartWidth.current = widthRef.current;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+      // Sidebar is on the right, so dragging left = wider
+      const delta = dragStartX.current - e.clientX;
+      const newWidth = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, dragStartWidth.current + delta));
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      if (!isDragging.current) return;
+      isDragging.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      // Persist width using ref for latest value
+      try { localStorage.setItem(STORAGE_KEY, String(widthRef.current)); } catch { /* ignore */ }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
 
   return (
     <div
@@ -407,9 +690,32 @@ export default function Sidebar(props: Props) {
         flexDirection: 'column',
         overflowY: 'auto',
         flexShrink: 0,
-        transition: 'width 0.2s ease',
+        position: 'relative',
       }}
     >
+      {/* Drag handle on left edge */}
+      <div
+        onMouseDown={handleMouseDown}
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 5,
+          cursor: 'col-resize',
+          zIndex: 10,
+          background: 'transparent',
+        }}
+        onMouseEnter={(e) => {
+          (e.currentTarget as HTMLDivElement).style.background = 'rgba(74, 144, 232, 0.4)';
+        }}
+        onMouseLeave={(e) => {
+          if (!isDragging.current) {
+            (e.currentTarget as HTMLDivElement).style.background = 'transparent';
+          }
+        }}
+      />
+
       <TabBar activeTab={activeTab} onTabChange={onTabChange} hasTrace={flowTrace !== null} />
 
       {activeTab === 'controls' && <ControlsPanel {...props} />}
@@ -446,6 +752,19 @@ export default function Sidebar(props: Props) {
             onOpenInApiClient={onFlowOpenInApiClient}
           />
         </div>
+      )}
+
+      {activeTab === 'settings' && (
+        <SettingsPanel
+          settings={settings}
+          onUpdateEdgeLabels={onUpdateEdgeLabels}
+          onUpdateGraph={onUpdateGraph}
+          onUpdateSearch={onUpdateSearch}
+          onResetEdgeLabels={onResetEdgeLabels}
+          onResetGraph={onResetGraph}
+          onResetSearch={onResetSearch}
+          onResetAll={onResetAll}
+        />
       )}
     </div>
   );

@@ -8,9 +8,10 @@ import {
   Simulation,
 } from 'd3-force';
 import type { SimulationNodeDatum, SimulationLinkDatum } from 'd3-force';
-import type { Node, NodeDragHandler } from 'reactflow';
+import type { Node, Edge, NodeDragHandler } from 'reactflow';
 import type { OmniGraph } from '../types';
 import { styleNode, styleEdge } from '../layout/shared';
+import type { SearchFilterMode } from '../App';
 
 interface ForceNode extends SimulationNodeDatum {
   id: string;
@@ -22,14 +23,82 @@ interface UseForceSimulationOptions {
   active: boolean;
   setNodes: (updater: (nodes: Node[]) => Node[]) => void;
   setEdges: React.Dispatch<React.SetStateAction<any[]>>;
+  matchingIds: Set<string>;
+  isFiltering: boolean;
+  filterMode: SearchFilterMode;
 }
 
-export function useForceSimulation({ graphData, active, setNodes, setEdges }: UseForceSimulationOptions) {
+/** Apply filter to force-layout nodes inline (avoids extra render pass) */
+function applyForceFilter(
+  nodes: Node[],
+  matchingIds: Set<string>,
+  isFiltering: boolean,
+  mode: SearchFilterMode,
+): Node[] {
+  if (!isFiltering) return nodes;
+
+  if (mode === 'hide') {
+    return nodes.filter(node => matchingIds.has(node.id));
+  }
+
+  // Dim mode
+  return nodes.map(node => {
+    const matches = matchingIds.has(node.id);
+    return {
+      ...node,
+      style: {
+        ...node.style,
+        opacity: matches ? 1 : 0.15,
+        transition: 'opacity 0.2s',
+      },
+    };
+  });
+}
+
+/** Apply filter to force-layout edges inline */
+function applyForceEdgeFilter(
+  edges: Edge[],
+  matchingIds: Set<string>,
+  isFiltering: boolean,
+  mode: SearchFilterMode,
+): Edge[] {
+  if (!isFiltering) return edges;
+
+  if (mode === 'hide') {
+    return edges.filter(edge =>
+      matchingIds.has(edge.source) && matchingIds.has(edge.target),
+    );
+  }
+
+  // Dim mode
+  return edges.map(edge => {
+    const bothMatch = matchingIds.has(edge.source) && matchingIds.has(edge.target);
+    return {
+      ...edge,
+      style: {
+        ...edge.style,
+        opacity: bothMatch ? 1 : 0.08,
+        transition: 'opacity 0.2s',
+      },
+      animated: bothMatch ? edge.animated : false,
+    };
+  });
+}
+
+export function useForceSimulation({
+  graphData, active, setNodes, setEdges,
+  matchingIds, isFiltering, filterMode,
+}: UseForceSimulationOptions) {
   const simRef = useRef<Simulation<ForceNode, SimulationLinkDatum<ForceNode>> | null>(null);
   const simNodesRef = useRef<ForceNode[]>([]);
   const nodeMapRef = useRef<Map<string, ForceNode>>(new Map());
   const rafRef = useRef<number | null>(null);
   const needsUpdateRef = useRef(false);
+  // Store raw (unfiltered) edges so we can re-filter when params change
+  const rawEdgesRef = useRef<Edge[]>([]);
+  // Store latest filter params in refs so tick callback always has current values
+  const filterRef = useRef({ matchingIds, isFiltering, filterMode });
+  filterRef.current = { matchingIds, isFiltering, filterMode };
 
   // Flush simulation positions to React Flow via rAF (throttled to ~60fps)
   const scheduleUpdate = useCallback(() => {
@@ -40,27 +109,15 @@ export function useForceSimulation({ graphData, active, setNodes, setEdges }: Us
       if (!needsUpdateRef.current) return;
       needsUpdateRef.current = false;
       const simNodes = simNodesRef.current;
-      setNodes((prev) => {
-        // If lengths differ, rebuild; otherwise update positions in-place
-        if (prev.length !== simNodes.length) {
-          return simNodes.map(sn => ({
-            ...sn.flowNode,
-            position: { x: sn.x ?? 0, y: sn.y ?? 0 },
-          }));
-        }
-        return prev.map((node, i) => {
-          const sn = simNodes[i];
-          const nx = sn.x ?? 0;
-          const ny = sn.y ?? 0;
-          // Skip update if position hasn't changed meaningfully
-          if (
-            Math.abs(node.position.x - nx) < 0.1 &&
-            Math.abs(node.position.y - ny) < 0.1
-          ) {
-            return node;
-          }
-          return { ...node, position: { x: nx, y: ny } };
-        });
+      const { matchingIds: mIds, isFiltering: isFilt, filterMode: fMode } = filterRef.current;
+
+      setNodes(() => {
+        // Build all nodes with current simulation positions, then filter
+        const updated = simNodes.map(sn => ({
+          ...sn.flowNode,
+          position: { x: sn.x ?? 0, y: sn.y ?? 0 },
+        }));
+        return applyForceFilter(updated, mIds, isFilt, fMode);
       });
     });
   }, [setNodes]);
@@ -108,16 +165,18 @@ export function useForceSimulation({ graphData, active, setNodes, setEdges }: Us
       target: e.target,
     }));
 
-    // Set edges once (edge routing is handled by React Flow based on node positions)
-    setEdges(validEdges.map(styleEdge));
+    // Store raw edges and set filtered edges
+    const styledEdges = validEdges.map(styleEdge);
+    rawEdgesRef.current = styledEdges;
+    const { matchingIds: mIds, isFiltering: isFilt, filterMode: fMode } = filterRef.current;
+    setEdges(applyForceEdgeFilter(styledEdges, mIds, isFilt, fMode));
 
     // Set initial node positions immediately so React Flow has something to render
-    setNodes(() =>
-      simNodes.map(sn => ({
-        ...sn.flowNode,
-        position: { x: sn.x ?? 0, y: sn.y ?? 0 },
-      })),
-    );
+    const initialNodes = simNodes.map(sn => ({
+      ...sn.flowNode,
+      position: { x: sn.x ?? 0, y: sn.y ?? 0 },
+    }));
+    setNodes(() => applyForceFilter(initialNodes, mIds, isFilt, fMode));
 
     const simulation = forceSimulation(simNodes)
       .force(
@@ -145,6 +204,85 @@ export function useForceSimulation({ graphData, active, setNodes, setEdges }: Us
       }
     };
   }, [active, graphData, scheduleUpdate, setEdges, setNodes]);
+
+  // When filter params change, dynamically adjust forces to compact visible nodes
+  // and re-apply visual filter without restarting the simulation
+  useEffect(() => {
+    if (!active || !graphData) return;
+    const sim = simRef.current;
+
+    // Re-filter nodes by triggering an immediate position update
+    const simNodes = simNodesRef.current;
+    let visibleNodes: Node[] = [];
+    if (simNodes.length > 0) {
+      const updated = simNodes.map(sn => ({
+        ...sn.flowNode,
+        position: { x: sn.x ?? 0, y: sn.y ?? 0 },
+      }));
+      visibleNodes = applyForceFilter(updated, matchingIds, isFiltering, filterMode);
+      setNodes(() => visibleNodes);
+    }
+
+    // Re-filter edges — use actual visible node IDs (not just matchingIds) to prevent orphans
+    const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
+    let filteredEdges = applyForceEdgeFilter(rawEdgesRef.current, matchingIds, isFiltering, filterMode);
+    filteredEdges = filteredEdges.filter(e => visibleNodeIds.has(e.source) && visibleNodeIds.has(e.target));
+    setEdges(filteredEdges);
+
+    // Dynamically adjust simulation forces to pull visible nodes together
+    if (sim && isFiltering && filterMode === 'hide') {
+      // Compute centroid of visible nodes so compaction centers on them
+      let cx = 0, cy = 0, count = 0;
+      for (const sn of simNodes) {
+        if (matchingIds.has(sn.id)) {
+          cx += sn.x ?? 0;
+          cy += sn.y ?? 0;
+          count++;
+        }
+      }
+      if (count > 0) {
+        cx /= count;
+        cy /= count;
+      }
+
+      // Per-node charge: hidden nodes have zero charge so they don't push visible ones apart
+      sim.force('charge', forceManyBody<ForceNode>()
+        .strength((d: ForceNode) => matchingIds.has(d.id) ? -100 : 0)
+        .distanceMax(300),
+      );
+      sim.force('center', forceCenter(cx, cy).strength(0.08));
+      sim.force('collide', forceCollide<ForceNode>(
+        (d: ForceNode) => matchingIds.has(d.id) ? 50 : 0,
+      ).strength(0.7));
+
+      // Pin non-visible nodes in place so they don't interfere
+      for (const sn of simNodes) {
+        if (!matchingIds.has(sn.id)) {
+          sn.fx = sn.x;
+          sn.fy = sn.y;
+        } else {
+          sn.fx = null;
+          sn.fy = null;
+        }
+      }
+
+      // Reheat to animate the compaction
+      sim.alpha(0.4).restart();
+    } else if (sim && !isFiltering) {
+      // Restore default forces when filter is cleared
+      sim.force('charge', forceManyBody().strength(-250).distanceMax(500));
+      sim.force('center', forceCenter(0, 0).strength(0.03));
+      sim.force('collide', forceCollide(50).strength(0.5));
+
+      // Unpin all nodes
+      for (const sn of simNodes) {
+        sn.fx = null;
+        sn.fy = null;
+      }
+
+      sim.alpha(0.3).restart();
+    }
+  }, [active, graphData, matchingIds, isFiltering, filterMode, setNodes, setEdges]);
 
   const onNodeDrag: NodeDragHandler = useCallback((_evt, node) => {
     const sim = simRef.current;

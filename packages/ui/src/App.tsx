@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import ReactFlow, {
   Background,
   Controls,
@@ -11,6 +11,14 @@ import ReactFlow, {
   useReactFlow,
   ReactFlowProvider,
 } from 'reactflow';
+import {
+  forceSimulation as d3ForceSimulation,
+  forceCenter as d3ForceCenter,
+  forceManyBody as d3ForceManyBody,
+  forceCollide as d3ForceCollide,
+  forceLink as d3ForceLink,
+} from 'd3-force';
+import type { SimulationNodeDatum } from 'd3-force';
 import type { OmniGraph, OmniNode, OmniEdge, HttpMethod } from './types';
 import Sidebar from './components/Sidebar';
 import type { SidebarTab } from './components/Sidebar';
@@ -22,8 +30,18 @@ import { useForceSimulation } from './hooks/useForceSimulation';
 import { useExport } from './hooks/useExport';
 import { useApiClient } from './hooks/useApiClient';
 import { useFlowTracer } from './hooks/useFlowTracer';
+import { useSettings } from './hooks/useSettings';
 
 const nodeTypes = { directoryGroup: DirectoryGroupNode };
+
+export type SearchFilterMode = 'hide' | 'dim';
+
+/** CSS injected when compacting so React Flow node transforms animate smoothly */
+const COMPACT_TRANSITION_CSS = `
+.compact-transition .react-flow__node {
+  transition: transform 0.45s ease-out !important;
+}
+`;
 
 /** Determine which node IDs match the current search + type filters */
 function getMatchingIds(
@@ -41,15 +59,231 @@ function getMatchingIds(
   return ids;
 }
 
-/** Apply dim/highlight styling to nodes based on matching IDs */
+/**
+ * BFS-expand from a set of seed node IDs to include connected nodes
+ * up to `maxHops` away. This traces the full data flow path:
+ * component → API → (database) → API response → component.
+ */
+function expandConnectedIds(
+  seedIds: Set<string>,
+  edges: OmniEdge[],
+  maxHops: number,
+): Set<string> {
+  if (seedIds.size === 0) return seedIds;
+
+  // Build adjacency list (bidirectional — we want upstream AND downstream)
+  const adj = new Map<string, Set<string>>();
+  for (const e of edges) {
+    if (!adj.has(e.source)) adj.set(e.source, new Set());
+    if (!adj.has(e.target)) adj.set(e.target, new Set());
+    adj.get(e.source)!.add(e.target);
+    adj.get(e.target)!.add(e.source);
+  }
+
+  const result = new Set(seedIds);
+  let frontier = new Set(seedIds);
+
+  for (let hop = 0; hop < maxHops; hop++) {
+    const nextFrontier = new Set<string>();
+    for (const nodeId of frontier) {
+      const neighbors = adj.get(nodeId);
+      if (!neighbors) continue;
+      for (const neighbor of neighbors) {
+        if (!result.has(neighbor)) {
+          result.add(neighbor);
+          nextFrontier.add(neighbor);
+        }
+      }
+    }
+    if (nextFrontier.size === 0) break;
+    frontier = nextFrontier;
+  }
+
+  return result;
+}
+
+/**
+ * Hub-centric compaction: finds the node(s) with the most edges and uses
+ * them as the anchor point. Single hub → stays pinned, everything gravitates
+ * toward it. Multiple hubs (tied edge count) → they meet at their average
+ * position and everything gravitates there. Leaf nodes pull in via link forces.
+ */
+interface CompactSimNode extends SimulationNodeDatum {
+  id: string;
+  isHub?: boolean;
+}
+
+function compactNodes(visibleNodes: Node[], visibleEdges: Edge[]): Node[] {
+  if (visibleNodes.length <= 1) return visibleNodes;
+
+  const nodeIdSet = new Set(visibleNodes.map(n => n.id));
+  const links = visibleEdges
+    .filter(e => nodeIdSet.has(e.source) && nodeIdSet.has(e.target))
+    .map(e => ({ source: e.source, target: e.target }));
+
+  // ── Step 1: Count edges per visible node ──────────────────────────
+  const edgeCount = new Map<string, number>();
+  for (const n of visibleNodes) edgeCount.set(n.id, 0);
+  for (const link of links) {
+    edgeCount.set(link.source, (edgeCount.get(link.source) ?? 0) + 1);
+    edgeCount.set(link.target, (edgeCount.get(link.target) ?? 0) + 1);
+  }
+
+  // ── Step 2: Find hub(s) — node(s) with the highest edge count ─────
+  let maxEdges = 0;
+  for (const count of edgeCount.values()) {
+    if (count > maxEdges) maxEdges = count;
+  }
+
+  const hubIds = new Set<string>();
+  for (const [id, count] of edgeCount) {
+    if (count === maxEdges && maxEdges > 0) hubIds.add(id);
+  }
+
+  // Fallback: if no edges at all, use plain centroid of all nodes
+  if (hubIds.size === 0) {
+    for (const n of visibleNodes) hubIds.add(n.id);
+  }
+
+  // ── Step 3: Compute anchor point ──────────────────────────────────
+  // Single hub → its exact position (it won't move)
+  // Multiple hubs → their average position (they'll meet here)
+  let cx = 0, cy = 0;
+  const hubNodes = visibleNodes.filter(n => hubIds.has(n.id));
+  for (const n of hubNodes) {
+    cx += n.position.x;
+    cy += n.position.y;
+  }
+  cx /= hubNodes.length;
+  cy /= hubNodes.length;
+
+  const singleHub = hubIds.size === 1;
+
+  // ── Step 4: Build simulation nodes ────────────────────────────────
+  const simNodes: CompactSimNode[] = visibleNodes.map(n => {
+    const isHub = hubIds.has(n.id);
+    return {
+      id: n.id,
+      x: n.position.x,
+      y: n.position.y,
+      isHub,
+      // Pin the single hub so it never moves; others are free
+      ...(singleHub && isHub ? { fx: n.position.x, fy: n.position.y } : {}),
+    };
+  });
+
+  // ── Step 5: Configure forces ──────────────────────────────────────
+  // Nodes are ~172×36px — collide and link distances must account for node width
+  const count = visibleNodes.length;
+  const linkDist = Math.max(140, Math.min(220, count * 8));
+  const chargeStr = Math.max(-300, Math.min(-80, -count * 6));
+
+  const sim = d3ForceSimulation(simNodes as any)
+    .force('center', d3ForceCenter(cx, cy).strength(singleHub ? 0.06 : 0.12))
+    .force('charge', d3ForceManyBody().strength(chargeStr).distanceMax(500))
+    .force('collide', d3ForceCollide(100).strength(0.9).iterations(3))
+    .force(
+      'link',
+      d3ForceLink(links as any)
+        .id((d: any) => d.id)
+        .distance(linkDist)
+        .strength((link: any) => {
+          // Stronger pull for edges connected to a hub
+          const srcHub = hubIds.has(link.source.id ?? link.source);
+          const tgtHub = hubIds.has(link.target.id ?? link.target);
+          return (srcHub || tgtHub) ? 0.6 : 0.35;
+        }),
+    )
+    .alphaDecay(0.035)
+    .velocityDecay(0.35)
+    .stop();
+
+  // 120 ticks — a few extra to let hub-connected nodes settle nicely
+  for (let i = 0; i < 120; i++) sim.tick();
+
+  // ── Step 6: Map positions back ────────────────────────────────────
+  const positionMap = new Map<string, { x: number; y: number }>();
+  for (const sn of simNodes) {
+    positionMap.set(sn.id, { x: sn.x ?? 0, y: sn.y ?? 0 });
+  }
+
+  return visibleNodes.map(n => {
+    const pos = positionMap.get(n.id);
+    return pos ? { ...n, position: pos } : n;
+  });
+}
+
+/**
+ * When hiding nodes, un-nest them from directoryGroup parents.
+ * Converts relative (parent-offset) positions to absolute positions so
+ * compaction and edge rendering work correctly after parent groups are removed.
+ */
+function unnestFromGroups(nodes: Node[]): Node[] {
+  // Build a map of group positions (can be nested: group inside group)
+  const groupPos = new Map<string, { x: number; y: number }>();
+  for (const n of nodes) {
+    if (n.type === 'directoryGroup') {
+      groupPos.set(n.id, n.position);
+    }
+  }
+
+  // Resolve absolute position by walking the parentNode chain
+  function resolveAbsolute(node: Node): { x: number; y: number } {
+    let x = node.position.x;
+    let y = node.position.y;
+    let pid = node.parentNode;
+    const seen = new Set<string>(); // guard against cycles
+    while (pid && !seen.has(pid)) {
+      seen.add(pid);
+      const pp = groupPos.get(pid);
+      if (pp) {
+        x += pp.x;
+        y += pp.y;
+      }
+      // Find parent's parentNode
+      const parentNode = nodes.find(n => n.id === pid);
+      pid = parentNode?.parentNode;
+    }
+    return { x, y };
+  }
+
+  return nodes
+    .filter(n => n.type !== 'directoryGroup')
+    .map(n => {
+      if (!n.parentNode) return n;
+      const absPos = resolveAbsolute(n);
+      // Return a flat (un-nested) copy with absolute position
+      const { parentNode: _removed, extent: _extRemoved, ...rest } = n as any;
+      return { ...rest, position: absPos } as Node;
+    });
+}
+
+/** Apply dim/highlight/hide styling to nodes based on matching IDs */
 function applyFilterStyles(
   nodes: Node[],
   edges: Edge[],
   matchingIds: Set<string>,
   isFiltering: boolean,
+  mode: SearchFilterMode,
 ): { nodes: Node[]; edges: Edge[] } {
   if (!isFiltering) return { nodes, edges };
 
+  if (mode === 'hide') {
+    // Un-nest from directoryGroups and convert to absolute positions,
+    // then keep only matching nodes
+    const flatNodes = unnestFromGroups(nodes);
+    const filteredNodes = flatNodes.filter(node => matchingIds.has(node.id));
+
+    // Filter edges using the actual set of visible node IDs (strictest check)
+    const visibleIds = new Set(filteredNodes.map(n => n.id));
+    const filteredEdges = edges.filter(edge =>
+      visibleIds.has(edge.source) && visibleIds.has(edge.target),
+    );
+
+    return { nodes: filteredNodes, edges: filteredEdges };
+  }
+
+  // Dim mode — keep all nodes but lower opacity of non-matching
   const styledNodes = nodes.map(node => {
     if (node.type === 'directoryGroup') return node;
     const matches = matchingIds.has(node.id);
@@ -130,21 +364,43 @@ function GraphApp() {
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTypes, setActiveTypes] = useState<Set<string>>(new Set());
+  const [searchFilterMode, setSearchFilterMode] = useState<SearchFilterMode>('hide');
+  const [searchDepth, setSearchDepth] = useState(2);
   const [activeTab, setActiveTab] = useState<SidebarTab>('controls');
+  const [isCompacting, setIsCompacting] = useState(false);
+  const compactTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Stores compacted node positions so they survive re-renders (trace clicks, etc.)
+  // Also tracks a fingerprint of the filter state when compaction happened,
+  // so positions are invalidated when the user changes search/filter/layout.
+  const compactedPositionsRef = useRef<{
+    positions: Map<string, { x: number; y: number }>;
+    fingerprint: string;
+  } | null>(null);
   const { fitView } = useReactFlow();
+
+  // Settings
+  const {
+    settings,
+    updateEdgeLabels, updateGraph, updateSearch,
+    resetEdgeLabels, resetGraph, resetSearch, resetAll,
+  } = useSettings();
+
+  // Apply search defaults from settings on first load
+  const settingsInitRef = useRef(false);
+  useEffect(() => {
+    if (!settingsInitRef.current) {
+      settingsInitRef.current = true;
+      setSearchFilterMode(settings.search.defaultFilterMode);
+      setSearchDepth(settings.search.defaultDepth);
+    }
+  }, []);
 
   const [layoutNodes, setLayoutNodes] = useState<Node[]>([]);
   const [layoutEdges, setLayoutEdges] = useState<Edge[]>([]);
 
   const isForceActive = layoutPreset === 'force';
-  const { onNodeDrag: forceDrag, onNodeDragStop: forceDragStop } = useForceSimulation({
-    graphData,
-    active: isForceActive,
-    setNodes,
-    setEdges,
-  });
 
-  const { exportPng, exportSvg, exportJson } = useExport(graphData);
+  const { exportPng, exportSvg, exportJson, exportGif, gifProgress } = useExport(graphData);
   const apiClient = useApiClient();
   const flowTracer = useFlowTracer(graphData);
 
@@ -159,6 +415,28 @@ function GraphApp() {
       setActiveTypes(new Set(availableTypes));
     }
   }, [availableTypes]);
+
+  // Compute matching IDs (shared by both layout modes)
+  const isFiltering = searchQuery !== '' || activeTypes.size !== availableTypes.length;
+  const matchingIds = useMemo(() => {
+    if (!graphData) return new Set<string>();
+    let ids = getMatchingIds(graphData, searchQuery, activeTypes);
+    if (searchQuery !== '' && ids.size > 0) {
+      ids = expandConnectedIds(ids, graphData.edges, searchDepth);
+    }
+    return ids;
+  }, [graphData, searchQuery, activeTypes, searchDepth]);
+
+  // Force simulation — receives filter params so it can apply them inline during ticks
+  const { onNodeDrag: forceDrag, onNodeDragStop: forceDragStop } = useForceSimulation({
+    graphData,
+    active: isForceActive,
+    setNodes,
+    setEdges,
+    matchingIds,
+    isFiltering,
+    filterMode: searchFilterMode,
+  });
 
   useEffect(() => {
     fetch('/api/graph')
@@ -188,17 +466,84 @@ function GraphApp() {
     setTimeout(() => fitView({ padding: 0.1 }), 50);
   }, [graphData, layoutPreset, mindmapDirection]);
 
-  // Apply filter + trace styles
+  // Apply edge label settings: hide/show labels based on user preferences
+  const applyEdgeLabelSettings = useCallback((edgeList: Edge[]): Edge[] => {
+    const { showImportLabels, showLinksToLabels, showEmbedsLabels, showHttpLabels, labelColor, labelFontSize } = settings.edgeLabels;
+    return edgeList.map(edge => {
+      const label = typeof edge.label === 'string' ? edge.label : '';
+      let hideLabel = false;
+      if (label === 'imports' && !showImportLabels) hideLabel = true;
+      if (label === 'links to' && !showLinksToLabels) hideLabel = true;
+      if (label === 'embeds' && !showEmbedsLabels) hideLabel = true;
+      // HTTP labels are things like "GET /api/users", "POST /api/auth/login", etc.
+      if (/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+/i.test(label) && !showHttpLabels) hideLabel = true;
+
+      return {
+        ...edge,
+        label: hideLabel ? undefined : edge.label,
+        labelStyle: hideLabel ? undefined : {
+          ...(edge.labelStyle ?? {}),
+          fill: labelColor,
+          fontSize: labelFontSize,
+        },
+      };
+    });
+  }, [settings.edgeLabels]);
+
+  // Manual compact handler — triggered by user clicking the Compact button
+  const handleCompact = useCallback(() => {
+    if (isCompacting) return;
+    setIsCompacting(true);
+    if (compactTimerRef.current) clearTimeout(compactTimerRef.current);
+
+    // Use current nodes/edges from state
+    setNodes(currentNodes => {
+      const flatNodes = unnestFromGroups(currentNodes);
+      const compacted = compactNodes(flatNodes, edges);
+
+      // Save compacted positions so they persist across re-renders (e.g. trace clicks)
+      // Fingerprint captures the filter state — if it changes, compaction is stale
+      const posMap = new Map<string, { x: number; y: number }>();
+      for (const n of compacted) posMap.set(n.id, n.position);
+      const fingerprint = `${layoutPreset}|${searchQuery}|${searchFilterMode}|${Array.from(activeTypes).sort().join(',')}|${searchDepth}`;
+      compactedPositionsRef.current = { positions: posMap, fingerprint };
+
+      return compacted;
+    });
+
+    compactTimerRef.current = setTimeout(() => {
+      setIsCompacting(false);
+      compactTimerRef.current = null;
+      fitView({ padding: 0.15, duration: 350 });
+    }, 500);
+  }, [isCompacting, edges, fitView, setNodes, layoutPreset, searchQuery, searchFilterMode, activeTypes, searchDepth]);
+
+  // Apply filter + trace styles (non-force layouts) — NO auto-compact
   useEffect(() => {
     if (!graphData || isForceActive) return;
-    const isFiltering = searchQuery !== '' || activeTypes.size !== availableTypes.length;
-    const matchingIds = getMatchingIds(graphData, searchQuery, activeTypes);
 
+    // --- Step 1: Filter nodes/edges ---
     let { nodes: styled, edges: styledEdges } = applyFilterStyles(
-      layoutNodes, layoutEdges, matchingIds, isFiltering,
+      layoutNodes, layoutEdges, matchingIds, isFiltering, searchFilterMode,
     );
 
-    // Overlay trace highlighting when active
+    // --- Step 2: Restore compacted positions if they exist and match current state ---
+    const compactData = compactedPositionsRef.current;
+    const currentFingerprint = `${layoutPreset}|${searchQuery}|${searchFilterMode}|${Array.from(activeTypes).sort().join(',')}|${searchDepth}`;
+    if (compactData && compactData.fingerprint === currentFingerprint) {
+      styled = styled.map(n => {
+        const pos = compactData.positions.get(n.id);
+        return pos ? { ...n, position: pos } : n;
+      });
+    } else if (compactData && compactData.fingerprint !== currentFingerprint) {
+      // Filter/layout state changed — discard stale compacted positions
+      compactedPositionsRef.current = null;
+    }
+
+    // --- Step 3: Apply edge label settings ---
+    styledEdges = applyEdgeLabelSettings(styledEdges);
+
+    // --- Step 4: Trace highlighting (style-only, no position changes) ---
     if (flowTracer.isTracing && flowTracer.currentStep) {
       const result = applyTraceStyles(
         styled, styledEdges,
@@ -209,15 +554,17 @@ function GraphApp() {
       styledEdges = result.edges;
     }
 
+    // --- Step 5: Final safety — remove any orphan edges that reference non-existent nodes ---
+    const finalNodeIds = new Set(styled.map(n => n.id));
+    styledEdges = styledEdges.filter(e => finalNodeIds.has(e.source) && finalNodeIds.has(e.target));
+
     setNodes(styled);
     setEdges(styledEdges);
-  }, [layoutNodes, layoutEdges, searchQuery, activeTypes, availableTypes, isForceActive,
-      flowTracer.isTracing, flowTracer.currentStep]);
+  }, [layoutNodes, layoutEdges, matchingIds, isFiltering, isForceActive,
+      searchFilterMode, flowTracer.isTracing, flowTracer.currentStep,
+      applyEdgeLabelSettings, layoutPreset, searchQuery, activeTypes, searchDepth]);
 
-  const matchCount = useMemo(() => {
-    if (!graphData) return 0;
-    return getMatchingIds(graphData, searchQuery, activeTypes).size;
-  }, [graphData, searchQuery, activeTypes]);
+  const matchCount = matchingIds.size;
 
   const handleTypeToggle = useCallback((type: string) => {
     setActiveTypes(prev => {
@@ -287,31 +634,119 @@ function GraphApp() {
     );
   }
 
+  // Determine if node sliding transitions should be active
+  const useTransition = isCompacting && !isForceActive && settings.graph.animateTransitions;
+
   return (
     <div style={{ display: 'flex', height: '100vh', background: '#1a1a2e' }}>
-      <div style={{ flex: 1 }}>
+      {useTransition && <style>{COMPACT_TRANSITION_CSS}</style>}
+      <div style={{ flex: 1, position: 'relative' }}>
         <ReactFlow
+          className={useTransition ? 'compact-transition' : ''}
           nodes={nodes}
           edges={edges}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
-          onNodeClick={onNodeClick}
-          onEdgeClick={onEdgeClick}
-          onNodeDrag={isForceActive ? forceDrag : undefined}
-          onNodeDragStop={isForceActive ? forceDragStop : undefined}
-          onPaneClick={onPaneClick}
+          onNodeClick={gifProgress.active ? undefined : onNodeClick}
+          onEdgeClick={gifProgress.active ? undefined : onEdgeClick}
+          onNodeDrag={gifProgress.active ? undefined : (isForceActive ? forceDrag : undefined)}
+          onNodeDragStop={gifProgress.active ? undefined : (isForceActive ? forceDragStop : undefined)}
+          onPaneClick={gifProgress.active ? undefined : onPaneClick}
           nodeTypes={nodeTypes}
+          panOnDrag={!gifProgress.active}
+          zoomOnScroll={!gifProgress.active}
+          zoomOnDoubleClick={!gifProgress.active}
+          zoomOnPinch={!gifProgress.active}
+          nodesDraggable={!gifProgress.active}
+          nodesConnectable={false}
+          elementsSelectable={!gifProgress.active}
           minZoom={0.05}
           maxZoom={2}
           fitView
         >
           <Background color="#333" gap={16} />
           <Controls />
-          <MiniMap
-            nodeColor={(n) => NODE_COLORS[n.data?.omniNode?.type] ?? '#888'}
-            style={{ background: '#0d0d1e' }}
-          />
+          {settings.graph.minimapVisible && (
+            <MiniMap
+              nodeColor={(n) => NODE_COLORS[n.data?.omniNode?.type] ?? '#888'}
+              style={{ background: '#0d0d1e' }}
+              zoomable
+              pannable
+              maskColor="rgba(10, 10, 30, 0.7)"
+            />
+          )}
         </ReactFlow>
+
+        {/* GIF export overlay */}
+        {gifProgress.active && (
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'rgba(10, 10, 30, 0.75)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 50,
+              pointerEvents: 'all',
+            }}
+          >
+            {/* Spinner */}
+            <div
+              style={{
+                width: 56,
+                height: 56,
+                border: '4px solid rgba(74, 144, 232, 0.2)',
+                borderTopColor: '#4a90e8',
+                borderRadius: '50%',
+                animation: 'omnigraph-spin 0.8s linear infinite',
+                marginBottom: 20,
+              }}
+            />
+
+            {/* Progress text */}
+            <div style={{ color: '#fff', fontSize: 16, fontWeight: 600, marginBottom: 8 }}>
+              Exporting to GIF
+            </div>
+            <div style={{ color: '#aaa', fontSize: 13, marginBottom: 16 }}>
+              {gifProgress.message}
+            </div>
+
+            {/* Progress bar */}
+            <div
+              style={{
+                width: 240,
+                height: 6,
+                background: 'rgba(255,255,255,0.1)',
+                borderRadius: 3,
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  height: '100%',
+                  width: `${gifProgress.percent}%`,
+                  background: 'linear-gradient(90deg, #4a90e8, #63b3ed)',
+                  borderRadius: 3,
+                  transition: 'width 0.2s ease',
+                }}
+              />
+            </div>
+            <div style={{ color: '#666', fontSize: 11, marginTop: 6 }}>
+              {gifProgress.percent}%
+            </div>
+          </div>
+        )}
+
+        {/* Spinner keyframes */}
+        {gifProgress.active && (
+          <style>{`
+            @keyframes omnigraph-spin {
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
+        )}
       </div>
       <Sidebar
         activeTab={activeTab}
@@ -322,16 +757,23 @@ function GraphApp() {
         onDirectionChange={setMindmapDirection}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
+        searchFilterMode={searchFilterMode}
+        onSearchFilterModeChange={setSearchFilterMode}
+        searchDepth={searchDepth}
+        onSearchDepthChange={setSearchDepth}
         activeTypes={activeTypes}
         onTypeToggle={handleTypeToggle}
         availableTypes={availableTypes}
         matchCount={matchCount}
         totalCount={graphData?.nodes.length ?? 0}
+        onCompact={handleCompact}
+        isCompacting={isCompacting}
         selectedNode={selected}
         onCloseInspector={() => setSelected(null)}
         onExportPng={exportPng}
         onExportSvg={exportSvg}
         onExportJson={exportJson}
+        onExportGif={exportGif}
         // API Client
         apiRequest={apiClient.request}
         apiResponse={apiClient.response}
@@ -357,6 +799,15 @@ function GraphApp() {
           setActiveTab('controls');
         }}
         onFlowOpenInApiClient={handleFlowOpenInApiClient}
+        // Settings
+        settings={settings}
+        onUpdateEdgeLabels={updateEdgeLabels}
+        onUpdateGraph={updateGraph}
+        onUpdateSearch={updateSearch}
+        onResetEdgeLabels={resetEdgeLabels}
+        onResetGraph={resetGraph}
+        onResetSearch={resetSearch}
+        onResetAll={resetAll}
       />
     </div>
   );

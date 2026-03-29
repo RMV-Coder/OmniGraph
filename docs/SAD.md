@@ -1,7 +1,7 @@
 # Software Architecture Document (SAD)
 
 **Project:** OmniGraph
-**Version:** 2.0.0
+**Version:** 3.0.0
 **Date:** March 2026
 
 ## 1. Architecture Overview
@@ -107,7 +107,7 @@ interface OmniEdge {
   id: string;       // "e-{source}->{target}"
   source: string;   // Source node ID
   target: string;   // Target node ID
-  label: string;    // Relationship type: "imports" or "requires"
+  label: string;    // Relationship type: "imports", "requires", "links to", "embeds", or HTTP method+path
 }
 
 interface OmniGraph {
@@ -136,9 +136,10 @@ interface IParser {
 4. No changes needed in server, CLI, or graph engine
 
 **Current parsers:**
-- `TypeScriptParser` — handles `.ts`/`.tsx`/`.js`/`.jsx`, detects NestJS decorators, uses `@typescript-eslint/typescript-estree`
+- `TypeScriptParser` — handles `.ts`/`.tsx`/`.js`/`.jsx`, detects NestJS decorators and Next.js patterns, uses `@typescript-eslint/typescript-estree`
 - `PythonParser` — handles `.py`, detects FastAPI/Flask/Django patterns, regex-based
 - `PhpParser` — handles `.php`, detects Laravel patterns, regex-based
+- `MarkdownParser` — handles `.md`/`.mdx`, detects Obsidian wiki-links/embeds/frontmatter, regex-based (see ADR-003)
 
 ## 6. UI Architecture
 
@@ -148,10 +149,17 @@ The frontend is a React SPA built with Vite and served as static files.
 - 5 layout presets: Directory (grouped), Hierarchical (dagre TB), Force-Directed (d3-force), Grid, Mind Map (dagre LR/RL)
 - Force-directed layout maintains a live d3-force simulation — dragging a node causes reactive push/pull physics on nearby nodes
 - Layout computation is done client-side after fetching graph data
+- Hub-centric compaction uses d3-force to pull filtered nodes toward the most-connected hub node(s)
 
 **Sidebar:**
-- Right-side drawer containing layout selector, search input, type filter chips, and node inspector
-- All controls are in the sidebar to keep the canvas clean
+- Right-side resizable drawer with drag handle, four tabs: Graph, API, Trace, Settings
+- Graph tab: layout selector, search/filter with BFS depth expansion, type chips, node inspector, export dropdown, compact button
+- Settings tab: per-category configuration (edge labels, graph, search) with localStorage persistence and reset buttons
+
+**Export System:**
+- PNG/SVG via `html-to-image`, JSON via Blob serialization
+- GIF via `gif.js` with manual `stroke-dashoffset` animation per frame (30 frames at 30fps)
+- GIF export shows a progress overlay (spinner + percentage bar) and disables canvas interactions during capture/encoding
 
 **Node Types and Colors:**
 | Type | Color | Language |
@@ -165,6 +173,13 @@ The frontend is a React SPA built with Vite and served as static files.
 | `python-fastapi-route` | Teal (#009688) | Python |
 | `python-django-view` | Dark Green (#092e20) | Python |
 | `python-django-model` | Green (#44b78b) | Python |
+| `nextjs-api-route` | Blue (#0070f3) | Next.js |
+| `nextjs-page` | Dark (#171717) | Next.js |
+| `nextjs-layout` | Gray (#383838) | Next.js |
+| `markdown-file` | Purple (#7c3aed) | Markdown |
+| `markdown-moc` | Light Purple (#a855f7) | Markdown |
+| `markdown-daily` | Dark Purple (#6d28d9) | Markdown |
+| `markdown-readme` | Mid Purple (#8b5cf6) | Markdown |
 | `php-file` | Purple (#777bb4) | PHP |
 | `php-laravel-controller` | Red (#ff2d20) | PHP |
 | `php-laravel-model` | Coral (#f4645f) | PHP |

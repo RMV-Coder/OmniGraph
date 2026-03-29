@@ -8,10 +8,11 @@ OmniGraph is a free, local developer tool that statically analyzes full-stack mo
 
 | Language | Extensions | Framework Detection |
 |----------|-----------|-------------------|
-| **TypeScript** | `.ts`, `.tsx` | NestJS (`@Controller`, `@Injectable`, `@Module`) |
+| **TypeScript** | `.ts`, `.tsx` | NestJS (`@Controller`, `@Injectable`, `@Module`), Next.js (App Router, Pages Router) |
 | **JavaScript** | `.js`, `.jsx` | CommonJS and ES module imports |
 | **Python** | `.py` | FastAPI (`@router.get`, `@app.post`), Flask (`@app.route`), Django (Views, Models) |
 | **PHP** | `.php` | Laravel (Controllers, Models, Middleware, Route definitions) |
+| **Markdown** | `.md`, `.mdx` | Obsidian wiki-links (`[[Page]]`), embeds (`![[Page]]`), frontmatter tags/aliases |
 
 ## Quick Start
 
@@ -44,28 +45,38 @@ omnigraph --path <repo-path> --port 4000  # Optional: custom port (default 3000)
 ## Features
 
 ### Multi-Language Dependency Graph
-Point OmniGraph at any project containing TypeScript, JavaScript, Python, or PHP files. It recursively walks the directory, respects `.gitignore`, and builds a dependency graph from import/require statements.
+Point OmniGraph at any project containing TypeScript, JavaScript, Python, PHP, or Markdown files. It recursively walks the directory, respects `.gitignore`, and builds a dependency graph from import/require statements and wiki-links.
 
 ### Framework-Aware Parsing
 OmniGraph doesn't just find imports — it understands framework patterns:
 - **NestJS**: Detects `@Controller`, `@Injectable`, `@Module` decorators with route metadata
+- **Next.js**: Detects App Router (`route.ts`, `page.tsx`, `layout.tsx`) and Pages Router (`pages/api/`)
 - **FastAPI/Flask**: Detects route decorators (`@router.get("/users")`) with HTTP methods and paths
 - **Django**: Detects class-based views (`APIView`, `ViewSet`) and models
 - **Laravel**: Detects controllers, models, middleware, and `Route::get()` definitions
+- **Obsidian/Markdown**: Detects wiki-links (`[[Page]]`), embeds (`![[Page]]`), YAML frontmatter (tags, aliases), and classifies MOC/daily/readme note types
 
 ### Interactive Visualization
 - **5 Layout Presets**: Directory (grouped by folder), Hierarchical, Force-Directed, Grid, Mind Map (LR/RL)
 - **Live Force Simulation**: In force-directed mode, dragging a node causes nearby nodes to push and pull reactively via d3-force physics
-- **Search & Filter**: Search nodes by name, filter by type with color-coded toggle chips
+- **Search & Filter with BFS Expansion**: Search nodes by name, filter by type with color-coded toggle chips. Hide or dim non-matching nodes. Connected nodes expand via BFS depth slider to reveal full data flow paths.
+- **Hub-Centric Compaction**: After filtering, compact visible nodes around the most-connected hub node(s) using d3-force. Single hub stays pinned; multiple hubs meet at their average position.
 - **Node Inspector**: Click any node to see its file path, type, route metadata, and ID in the sidebar
-- **Color-Coded Types**: Each node type has a distinct color — controllers (red), injectables (blue), modules (orange), Python files (blue), FastAPI routes (teal), Laravel controllers (red), and more
+- **Color-Coded Types**: Each node type has a distinct color — controllers (red), injectables (blue), modules (orange), Python files (blue), FastAPI routes (teal), Laravel controllers (red), markdown (purple), and more
+- **Clickable Minimap**: Zoom and pan directly on the minimap for faster navigation
 
-### Sidebar Controls
-All controls live in a clean right sidebar:
-- Layout preset selector with mind map direction toggle
-- Real-time search with match count
-- Type filter chips with color legend
-- Node inspector panel below a divider
+### Export
+- **PNG** — 2x resolution raster image
+- **SVG** — Scalable vector graphic
+- **JSON** — Raw OmniGraph data
+- **GIF** — 1-second animated GIF (30fps) showing edge flow direction with a progress overlay
+
+### Sidebar Tabs
+The right sidebar has four tabs:
+- **Graph** — Layout selector, search/filter with depth slider, type chips, node inspector, export dropdown, compact button
+- **API** — Postman-style API debugger (auto-fills from cross-network edges)
+- **Trace** — Step-through flow tracer with Back/Next navigation and animated highlighting
+- **Settings** — Configurable edge labels (show/hide per type, color, font size), graph options (minimap, animations), search defaults, with per-category reset and localStorage persistence
 
 ## Technology Stack
 
@@ -77,9 +88,11 @@ All controls live in a clean right sidebar:
 | TypeScript/JS Parser | `@typescript-eslint/typescript-estree` |
 | Python Parser | Regex-based AST extraction |
 | PHP Parser | Regex-based AST extraction |
+| Markdown Parser | Regex-based wiki-link/embed/frontmatter extraction |
 | Frontend | React 18 + Vite |
 | Graph Engine | React Flow |
-| Layout Engines | dagre (hierarchical/mind map), d3-force (force-directed) |
+| Layout Engines | dagre (hierarchical/mind map), d3-force (force-directed, compaction) |
+| GIF Export | gif.js (web worker encoding) |
 | Testing | Vitest |
 
 ## Architecture
@@ -152,7 +165,7 @@ All parsers produce a standardized graph format regardless of source language:
 ## Running Tests
 
 ```bash
-npx vitest run       # Run all tests (56 tests across 6 files)
+npx vitest run       # Run all tests (132 tests across 9 files)
 npx vitest --watch   # Watch mode
 ```
 
@@ -169,9 +182,9 @@ Contributions are welcome! Here's how to get started:
 ### Good First Issues
 
 - Add a new language parser (Go, Rust, Java, C#, Ruby)
-- Add export functionality (SVG, PNG, JSON)
 - Improve import resolution for edge cases (barrel exports, dynamic imports)
 - Add dark/light theme toggle
+- WebSocket connection tracing
 
 ## Project Documentation
 
@@ -181,6 +194,7 @@ Contributions are welcome! Here's how to get started:
 | [SAD](docs/SAD.md) | Software architecture, data flow, and design decisions |
 | [ADR-001](docs/adr/ADR-001-parsing-engine.md) | Why typescript-estree for Phase 1 |
 | [ADR-002](docs/adr/ADR-002-phase2-multi-language-parsing.md) | Why regex-based parsing for Phase 2 Python/PHP |
+| [ADR-003](docs/adr/ADR-003-markdown-obsidian-parser.md) | Markdown/Obsidian wiki-link parser design |
 | [API Spec](docs/API-SPEC.md) | HTTP endpoint and CLI interface documentation |
 
 ## License

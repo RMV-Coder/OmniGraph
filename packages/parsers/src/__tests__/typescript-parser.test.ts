@@ -177,3 +177,184 @@ describe('TypeScriptParser.parse - import edges', () => {
     expect(nonexistentEdges).toHaveLength(0);
   });
 });
+
+// ─── Next.js Detection ──────────────────────────────────────────────
+
+describe('TypeScriptParser.parse - Next.js App Router route handlers', () => {
+  it('detects App Router route.ts with exported GET and POST', () => {
+    const source = `
+      import { NextResponse } from 'next/server';
+      export async function GET() {
+        return NextResponse.json({ users: [] });
+      }
+      export async function POST(request: Request) {
+        return NextResponse.json({}, { status: 201 });
+      }
+    `;
+    const result = parser.parse('/project/src/app/api/users/route.ts', source);
+
+    expect(result.nodes![0].type).toBe('nextjs-api-route');
+    expect(result.nodes![0].metadata.route).toContain('GET /api/users');
+    expect(result.nodes![0].metadata.route).toContain('POST /api/users');
+  });
+
+  it('detects App Router route with dynamic segments [id]', () => {
+    const source = `
+      export async function GET(req: Request, { params }: { params: { id: string } }) {
+        return Response.json({ id: params.id });
+      }
+      export async function DELETE(req: Request) {
+        return new Response(null, { status: 204 });
+      }
+    `;
+    const result = parser.parse('/project/src/app/api/users/[id]/route.ts', source);
+
+    expect(result.nodes![0].type).toBe('nextjs-api-route');
+    expect(result.nodes![0].metadata.route).toContain('GET /api/users/:id');
+    expect(result.nodes![0].metadata.route).toContain('DELETE /api/users/:id');
+  });
+
+  it('detects App Router route with catch-all segments [...slug]', () => {
+    const source = `
+      export async function GET() { return Response.json({}); }
+    `;
+    const result = parser.parse('/project/app/api/docs/[...slug]/route.ts', source);
+
+    expect(result.nodes![0].type).toBe('nextjs-api-route');
+    expect(result.nodes![0].metadata.route).toContain('/api/docs/:slug*');
+  });
+
+  it('detects App Router route without src/ prefix', () => {
+    const source = `
+      export async function GET() { return Response.json({}); }
+    `;
+    const result = parser.parse('/project/app/api/health/route.ts', source);
+
+    expect(result.nodes![0].type).toBe('nextjs-api-route');
+    expect(result.nodes![0].metadata.route).toContain('GET /api/health');
+  });
+
+  it('detects route.js files (not just .ts)', () => {
+    const source = `
+      export async function GET() { return Response.json({}); }
+    `;
+    const result = parser.parse('/project/app/api/status/route.js', source);
+
+    expect(result.nodes![0].type).toBe('nextjs-api-route');
+  });
+
+  it('does not detect route.ts outside of app/ directory', () => {
+    const source = `
+      export async function GET() { return Response.json({}); }
+    `;
+    const result = parser.parse('/project/lib/route.ts', source);
+
+    expect(result.nodes![0].type).toBe('typescript-file');
+  });
+
+  it('handles route.ts with exported const handlers (arrow functions)', () => {
+    const source = `
+      export const GET = async () => {
+        return Response.json({ ok: true });
+      };
+      export const POST = async (req: Request) => {
+        return Response.json({});
+      };
+    `;
+    const result = parser.parse('/project/src/app/api/items/route.ts', source);
+
+    expect(result.nodes![0].type).toBe('nextjs-api-route');
+    expect(result.nodes![0].metadata.route).toContain('GET /api/items');
+    expect(result.nodes![0].metadata.route).toContain('POST /api/items');
+  });
+});
+
+describe('TypeScriptParser.parse - Next.js Pages Router API routes', () => {
+  it('detects pages/api route with default export', () => {
+    const source = `
+      import type { NextApiRequest, NextApiResponse } from 'next';
+      export default function handler(req: NextApiRequest, res: NextApiResponse) {
+        res.status(200).json({ ok: true });
+      }
+    `;
+    const result = parser.parse('/project/pages/api/posts/[id].ts', source);
+
+    expect(result.nodes![0].type).toBe('nextjs-api-route');
+    expect(result.nodes![0].metadata.route).toBe('/api/posts/:id');
+  });
+
+  it('detects pages/api index route', () => {
+    const source = `
+      export default function handler(req, res) {
+        res.json({ ok: true });
+      }
+    `;
+    const result = parser.parse('/project/pages/api/index.ts', source);
+
+    expect(result.nodes![0].type).toBe('nextjs-api-route');
+    expect(result.nodes![0].metadata.route).toBe('/api');
+  });
+
+  it('detects pages/api in src/ directory', () => {
+    const source = `
+      export default function handler(req, res) { res.json({}); }
+    `;
+    const result = parser.parse('/project/src/pages/api/users.ts', source);
+
+    expect(result.nodes![0].type).toBe('nextjs-api-route');
+    expect(result.nodes![0].metadata.route).toBe('/api/users');
+  });
+
+  it('does not detect pages/api without default export', () => {
+    const source = `
+      export function helper() { return 'not a handler'; }
+    `;
+    const result = parser.parse('/project/pages/api/utils.ts', source);
+
+    expect(result.nodes![0].type).toBe('typescript-file');
+  });
+});
+
+describe('TypeScriptParser.parse - Next.js pages and layouts', () => {
+  it('detects App Router page.tsx', () => {
+    const source = `
+      export default function DashboardPage() {
+        return <div>Dashboard</div>;
+      }
+    `;
+    const result = parser.parse('/project/src/app/dashboard/page.tsx', source);
+
+    expect(result.nodes![0].type).toBe('nextjs-page');
+    expect(result.nodes![0].metadata.route).toBe('/dashboard');
+  });
+
+  it('detects App Router layout.tsx', () => {
+    const source = `
+      export default function RootLayout({ children }) {
+        return <html><body>{children}</body></html>;
+      }
+    `;
+    const result = parser.parse('/project/src/app/layout.tsx', source);
+
+    expect(result.nodes![0].type).toBe('nextjs-layout');
+  });
+
+  it('detects page with dynamic route segments', () => {
+    const source = `
+      export default function UserProfile({ params }: { params: { id: string } }) {
+        return <div>User {params.id}</div>;
+      }
+    `;
+    const result = parser.parse('/project/app/users/[id]/page.tsx', source);
+
+    expect(result.nodes![0].type).toBe('nextjs-page');
+    expect(result.nodes![0].metadata.route).toBe('/users/:id');
+  });
+
+  it('does not detect page.tsx outside of app/ directory', () => {
+    const source = `export default function Page() { return <div/>; }`;
+    const result = parser.parse('/project/components/page.tsx', source);
+
+    expect(result.nodes![0].type).toBe('typescript-file');
+  });
+});

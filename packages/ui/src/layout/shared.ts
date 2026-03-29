@@ -8,11 +8,20 @@ export const NODE_COLORS: Record<string, string> = {
   'nestjs-module': '#f5a623',
   'typescript-file': '#7ed321',
   'javascript-file': '#f0db4f',
+  // Next.js
+  'nextjs-api-route': '#0070f3',  // Next.js brand blue
+  'nextjs-page': '#171717',       // Next.js dark
+  'nextjs-layout': '#383838',     // Darker gray for layouts
   // Python
   'python-file': '#3776ab',
   'python-fastapi-route': '#009688',
   'python-django-view': '#092e20',
   'python-django-model': '#44b78b',
+  // Markdown / Obsidian
+  'markdown-file': '#7c3aed',       // Purple
+  'markdown-moc': '#a855f7',        // Lighter purple for Maps of Content
+  'markdown-daily': '#6d28d9',      // Darker purple for daily notes
+  'markdown-readme': '#8b5cf6',     // Mid purple for README
   // PHP
   'php-file': '#777bb4',
   'php-laravel-controller': '#ff2d20',
