@@ -1,1 +1,1 @@
-export type { OmniNode, OmniEdge, OmniGraph } from '@omnigraph/types';
+export type { OmniNode, OmniEdge, OmniGraph, MethodInfo } from '@omnigraph/types';

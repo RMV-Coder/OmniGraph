@@ -12,7 +12,7 @@ A local developer tool that statically analyzes codebases and generates an inter
 npm install                  # Install all workspace dependencies
 npm run build                # Build all packages (cli, server, parsers, ui)
 cd packages/ui && npm run build  # Build frontend separately (required before serving)
-npm run dev -- --path ../my-project  # Run against a target repo (port 3000 default)
+npm run dev -- --path ../my-project  # Run against a target repo (port 4000 default)
 ```
 
 Individual package builds use `tsc` (types, cli, server, parsers) or `tsc && vite build` (ui). Build order matters: types must build before parsers/ui.
@@ -31,10 +31,10 @@ CLI (@omnigraph/cli) → Server (@omnigraph/server) → Parsers (@omnigraph/pars
 ### Packages
 
 - **packages/types** — Shared `OmniNode`, `OmniEdge`, `OmniGraph` interfaces. Must build first.
-- **packages/cli** — Commander.js entry point. Accepts `--path` (required) and `--port` (optional). Calls `createServer()` from server package.
+- **packages/cli** — Commander.js multi-command CLI with global `--path` (default `.`) and `--json` flags. Subcommands: `graph` (query nodes/edges/deps), `trace` (data flow tracing), `fetch` (HTTP client), `methods` (list functions), `schema` (DB tables/FKs), `serve` (start server). No subcommand = serve. Shared formatting in `src/lib/format.ts`, graph caching in `src/lib/graph-loader.ts`.
 - **packages/server** — Express app with two routes: `GET /api/graph` (rate-limited 30 req/min) calls `parseDirectory()`, and `GET *` serves the built UI (rate-limited 200 req/min) from `../../ui/dist`.
 - **packages/parsers** — Core parsing logic. `parser-registry.ts` walks directories recursively, respects `.gitignore`, delegates to registered parsers, and deduplicates nodes. Four parsers registered: `TypeScriptParser` (`.ts`/`.tsx`/`.js`/`.jsx`), `PythonParser` (`.py`), `PhpParser` (`.php`), `MarkdownParser` (`.md`/`.mdx`).
-- **packages/ui** — React + Vite SPA. Fetches `/api/graph`, renders with React Flow. Four sidebar tabs (Graph, API, Trace, Settings). Node colors per type: red (controller), blue (injectable), orange (module), green (ts-file), yellow (js-file), blue (python), teal (FastAPI), dark-green (Django view), purple (PHP/Markdown), red (Laravel). Export: PNG, SVG, JSON, animated GIF.
+- **packages/ui** — React + Vite SPA. Fetches `/api/graph`, renders with React Flow. Six layout presets (directory, hierarchical, columns, force, grid, mindmap). Four sidebar tabs (Graph, API, Trace, Settings). DB ERD visualization with FK edges and click-highlighting. Method-level node expansion. Column Flow layout with auto-classification. Node colors per type: red (controller), blue (injectable), orange (module), green (ts-file), yellow (js-file), blue (python), teal (FastAPI), dark-green (Django view), purple (PHP/Markdown), red (Laravel), steel-blue (DB table). Export: PNG, SVG, JSON, animated GIF.
 
 ### Parser Plugin System
 
@@ -46,7 +46,7 @@ The core data model is `OmniGraph = { nodes: OmniNode[], edges: OmniEdge[] }` de
 
 ### Parser Details
 
-**TypeScript Parser** — Uses `@typescript-eslint/typescript-estree` for AST parsing (see ADR-001). Handles `.ts`/`.tsx`/`.js`/`.jsx` files. Resolves imports by trying extensions and index files. Detects NestJS decorators (@Controller, @Injectable, @Module) to set node types and metadata.
+**TypeScript Parser** — Uses `@typescript-eslint/typescript-estree` for AST parsing (see ADR-001). Handles `.ts`/`.tsx`/`.js`/`.jsx` files. Resolves imports by trying extensions and index files. Resolves tsconfig.json path aliases (`@/*` etc.) with project root detection and caching. Detects NestJS decorators (@Controller, @Injectable, @Module) to set node types and metadata. Extracts method-level info (functions, arrow functions, class methods, getters, setters) into `node.methods`.
 
 **Python Parser** — Regex-based parsing for `.py` files. Detects FastAPI/Flask route decorators (@app.get, @router.post, etc.), Django class-based views (extends View/APIView/ViewSet), and Django models. Resolves relative and absolute Python imports using package `__init__.py` conventions.
 

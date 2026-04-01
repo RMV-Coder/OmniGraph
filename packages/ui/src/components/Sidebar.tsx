@@ -40,6 +40,7 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   'db-table': 'DB Table',
   'db-collection': 'DB Collection',
   'db-view': 'DB View',
+  'method-node': 'Method',
 };
 
 const selectStyle: React.CSSProperties = {
@@ -127,6 +128,8 @@ interface Props {
   onExportJson: () => void;
   onExportGif: () => void;
   // API Client
+  apiBaseUrl: string;
+  onApiBaseUrlChange: (url: string) => void;
   apiRequest: { method: HttpMethod; url: string; headers: Record<string, string>; queryParams: Record<string, string>; body: string | null };
   apiResponse: ProxyResponse | null;
   apiLoading: boolean;
@@ -179,6 +182,9 @@ interface Props {
   onDbExecuteQuery: (query: string, limit?: number) => void;
   onDbClearQuery: () => void;
   onDbSelectTable?: (table: DatabaseTable) => void;
+  // Method expansion
+  expandedMethodNodes: Set<string>;
+  onExpandMethods: (nodeId: string) => void;
 }
 
 // ─── Tab Bar ─────────────────────────────────────────────────────────
@@ -340,6 +346,7 @@ function ControlsPanel({
   matchCount, totalCount, selectedNode, onCloseInspector,
   onExportPng, onExportSvg, onExportJson, onExportGif,
   onCompact, isCompacting,
+  expandedMethodNodes, onExpandMethods,
 }: Pick<Props,
   'layoutPreset' | 'onLayoutChange' | 'mindmapDirection' | 'onDirectionChange' |
   'searchQuery' | 'onSearchChange' | 'searchFilterMode' | 'onSearchFilterModeChange' |
@@ -347,7 +354,8 @@ function ControlsPanel({
   'activeTypes' | 'onTypeToggle' | 'availableTypes' |
   'matchCount' | 'totalCount' | 'selectedNode' | 'onCloseInspector' |
   'onExportPng' | 'onExportSvg' | 'onExportJson' | 'onExportGif' |
-  'onCompact' | 'isCompacting'
+  'onCompact' | 'isCompacting' |
+  'expandedMethodNodes' | 'onExpandMethods'
 >) {
   return (
     <>
@@ -619,6 +627,12 @@ function ControlsPanel({
                   <p style={{ fontSize: 11, color: '#e0e0e0', margin: 0 }}>{selectedNode.metadata.indexCount}</p>
                 </div>
               )}
+              {selectedNode.metadata.foreignKeyCount && Number(selectedNode.metadata.foreignKeyCount) > 0 && (
+                <div>
+                  <p style={labelStyle}>Foreign Keys</p>
+                  <p style={{ fontSize: 11, color: '#2dd4bf', margin: 0 }}>{selectedNode.metadata.foreignKeyCount}</p>
+                </div>
+              )}
               <div>
                 <p style={labelStyle}>Node ID</p>
                 <p style={{ fontSize: 11, color: '#888', wordBreak: 'break-all', margin: 0 }}>{selectedNode.id}</p>
@@ -679,6 +693,29 @@ function ControlsPanel({
                 <p style={labelStyle}>Node ID</p>
                 <p style={{ fontSize: 11, color: '#888', wordBreak: 'break-all', margin: 0 }}>{selectedNode.id}</p>
               </div>
+              {/* Method Expansion */}
+              {selectedNode.methods && selectedNode.methods.length > 0 && (
+                <button
+                  onClick={() => onExpandMethods(selectedNode.id)}
+                  style={{
+                    width: '100%',
+                    background: expandedMethodNodes.has(selectedNode.id) ? '#5a5a8a' : '#1a1a2e',
+                    color: expandedMethodNodes.has(selectedNode.id) ? '#fff' : '#ccc',
+                    border: '1px solid #444',
+                    borderRadius: 4,
+                    padding: '6px 12px',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    marginTop: 4,
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  {expandedMethodNodes.has(selectedNode.id)
+                    ? `Collapse Methods (${selectedNode.methods.length})`
+                    : `Expand Methods (${selectedNode.methods.length})`}
+                </button>
+              )}
               <div style={dividerStyle} />
               <CodeViewer filePath={selectedNode.metadata.filePath ?? selectedNode.id} />
             </>
@@ -717,6 +754,7 @@ export default function Sidebar(props: Props) {
   const {
     activeTab, onTabChange,
     // API Client
+    apiBaseUrl, onApiBaseUrlChange,
     apiRequest, apiResponse, apiLoading, apiError,
     onApiMethodChange, onApiUrlChange, onApiSetHeader, onApiRemoveHeader,
     onApiSetQueryParam, onApiRemoveQueryParam, onApiBodyChange, onApiSend, onApiReset,
@@ -822,6 +860,8 @@ export default function Sidebar(props: Props) {
       {activeTab === 'api-client' && (
         <div style={{ padding: '12px 16px' }}>
           <ApiClientPanel
+            baseUrl={apiBaseUrl}
+            onBaseUrlChange={onApiBaseUrlChange}
             request={apiRequest}
             response={apiResponse}
             loading={apiLoading}

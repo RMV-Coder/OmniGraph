@@ -1,8 +1,8 @@
 # API Specification
 
 **Project:** OmniGraph
-**Version:** 2.0.0
-**Base URL:** `http://localhost:{port}` (default port: 3000)
+**Version:** 3.0.0
+**Base URL:** `http://localhost:{port}` (default port: 4000)
 
 ## Endpoints
 
@@ -131,10 +131,10 @@ Serves the built React UI from `packages/ui/dist`. Any path not matching `/api/*
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | string | Format: `e-{source}->{target}` |
+| `id` | string | Format: `e-{source}->{target}` for imports, `e-http-*` for HTTP calls, `e-db-*` for code-to-table, `e-fk-*` for foreign keys |
 | `source` | string | Source node ID (the file containing the import). |
 | `target` | string | Target node ID (the imported file). |
-| `label` | string | Relationship type: `"imports"` or `"requires"`. |
+| `label` | string | Relationship type: `"imports"`, `"requires"`, `"links to"`, `"embeds"`, HTTP method+path, or FK column name |
 
 ### Node Types
 
@@ -154,19 +154,112 @@ Serves the built React UI from `packages/ui/dist`. Any path not matching `/api/*
 | `php-laravel-model` | PHP | `extends Model` | `filePath`, `route`, `language`, `framework`, `namespace`, `classes` |
 | `php-laravel-middleware` | PHP | `extends Middleware` | `filePath`, `route`, `language`, `framework`, `namespace`, `classes` |
 | `php-laravel-route` | PHP | Route file with `Route::` calls | `filePath`, `route`, `language`, `framework` |
+| `db-table` | Database | PostgreSQL table | `engine`, `schema`, `columnCount` |
+| `db-collection` | Database | MongoDB collection | `engine`, `columnCount` |
+| `db-view` | Database | PostgreSQL view | `engine`, `schema`, `columnCount` |
+| `method-node` | TypeScript | Expanded method from a file | `filePath`, `kind`, `line`, `endLine` |
+| `markdown-file` | Markdown | Default for `.md`/`.mdx` | `filePath`, `tags`, `aliases` |
+| `markdown-moc` | Markdown | Map of Content (many outgoing links) | `filePath`, `tags` |
+| `markdown-daily` | Markdown | Daily note (date-named file) | `filePath` |
+| `markdown-readme` | Markdown | README file | `filePath` |
 
 ## CLI Interface
 
 ```
-Usage: omnigraph [options]
+Usage: omnigraph [options] [command]
 
 Statically analyze a codebase and visualize its dependency graph
 
 Options:
-  --path <path>   Path to the repository to analyze (required)
-  --port <port>   Port to run the server on (default: "3000")
-  -V, --version   Output the version number
-  -h, --help      Display help for command
+  -V, --version      Output the version number
+  --path <path>      Path to the repository to analyze (default: ".")
+  --json             Output results as JSON (machine-readable)
+  -h, --help         Display help for command
+
+Commands:
+  graph [options]    Query the dependency graph (nodes, edges, deps)
+  trace [options]    Trace data flow from a component through API to database
+  fetch [options]    Make HTTP requests to API endpoints (like curl/Postman)
+  methods [options]  List functions/methods in a file
+  schema [options]   Inspect database schema from graph analysis
+  serve [options]    Start the OmniGraph visualization server
+```
+
+Running `omnigraph --path <repo>` with no subcommand starts the visualization server (backward compatible).
+
+### graph
+
+```
+Options:
+  --node <id>      Show a specific node and its connections
+  --deps <id>      Show transitive dependencies of a node
+  --rdeps <id>     Show reverse dependencies (what imports this node)
+  --filter <type>  Filter nodes by type (e.g. nextjs-api-route)
+  --edges          List all edges instead of nodes
+  --depth <n>      Max depth for --deps/--rdeps traversal (default: "3")
+  --stats          Show summary statistics only
+```
+
+### trace
+
+```
+Options:
+  --from <file>  Starting file or node ID (required)
+  --depth <n>    Max traversal depth (default: "5")
+```
+
+### fetch
+
+```
+Options:
+  --url <url>           Target URL (required)
+  --method <method>     HTTP method (default: "GET")
+  --header <header...>  Headers in "Key: Value" format (repeatable)
+  --body <json>         Request body (JSON string)
+  --body-file <path>    Read request body from file
+  --env-token <key>     Read auth token from .env and add as Bearer token
+  --cookie <cookie>     Cookie header value
+  --timeout <ms>        Request timeout in milliseconds (default: "30000")
+  --from <file>         Context: which source file triggers this call
+```
+
+### methods
+
+```
+Options:
+  --file <file>  File to analyze (required)
+  --exported     Show only exported functions
+  --kind <kind>  Filter by kind: function, method, arrow, getter, setter
+```
+
+### schema
+
+```
+Options:
+  --table <name>     Show details for a specific table
+  --tables           List all detected database tables
+  --fk               Show foreign key relationships
+  --columns <table>  Show columns for a table
+```
+
+### serve
+
+```
+Options:
+  --port <port>  Port to run the server on (default: "4000")
+```
+
+### JSON Output Mode
+
+All commands support `--json` (global flag) for machine-readable output. Designed for AI coding agents like Claude Code:
+
+```bash
+# Structured JSON to stdout, errors as JSON to stderr
+omnigraph --path . --json graph --stats
+# Output: {"nodes":96,"edges":135,"types":{"typescript-file":66,...}}
+
+omnigraph --path . --json methods --file src/lib/auth.ts
+# Output: [{"name":"login","kind":"function","exported":true,"params":["email","password"]},...]
 ```
 
 ## Export Formats

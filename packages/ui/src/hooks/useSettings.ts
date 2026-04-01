@@ -8,6 +8,7 @@ export interface EdgeLabelSettings {
   showEmbedsLabels: boolean;
   showHttpLabels: boolean;
   showQueriesLabels: boolean;
+  showFkLabels: boolean;
   labelColor: string;
   labelFontSize: number;
 }
@@ -15,6 +16,7 @@ export interface EdgeLabelSettings {
 export interface GraphSettings {
   autoCompact: boolean;
   animateTransitions: boolean;
+  animateEdges: boolean;
   minimapVisible: boolean;
 }
 
@@ -37,6 +39,7 @@ export const DEFAULT_EDGE_LABELS: EdgeLabelSettings = {
   showEmbedsLabels: false,
   showHttpLabels: true,
   showQueriesLabels: true,
+  showFkLabels: true,
   labelColor: '#888888',
   labelFontSize: 10,
 };
@@ -44,6 +47,7 @@ export const DEFAULT_EDGE_LABELS: EdgeLabelSettings = {
 export const DEFAULT_GRAPH: GraphSettings = {
   autoCompact: false,
   animateTransitions: true,
+  animateEdges: true,
   minimapVisible: true,
 };
 

@@ -82,6 +82,8 @@ function formatBody(body: string): string {
 }
 
 interface Props {
+  baseUrl: string;
+  onBaseUrlChange: (url: string) => void;
   request: {
     method: HttpMethod;
     url: string;
@@ -104,6 +106,8 @@ interface Props {
 }
 
 export default function ApiClientPanel({
+  baseUrl,
+  onBaseUrlChange,
   request,
   response,
   loading,
@@ -127,6 +131,20 @@ export default function ApiClientPanel({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* Base URL */}
+      <div>
+        <p style={labelStyle}>Base URL</p>
+        <input
+          value={baseUrl}
+          onChange={(e) => onBaseUrlChange(e.target.value)}
+          placeholder="http://localhost:3000"
+          style={inputStyle}
+        />
+        <p style={{ fontSize: 10, color: '#555', marginTop: 3, marginBottom: 0 }}>
+          Prepended to relative paths. Ignored if the endpoint is a full URL.
+        </p>
+      </div>
+
       {/* Method + URL row */}
       <div style={{ display: 'flex', gap: 6 }}>
         <select

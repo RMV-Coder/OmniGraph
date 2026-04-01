@@ -2,16 +2,22 @@ import React from 'react';
 import type { FlowTrace, FlowStepType } from '../../types';
 
 const STEP_ICONS: Record<FlowStepType, string> = {
-  caller: '\u{1F4C4}',       // page
-  'http-call': '\u{1F310}',  // globe
+  caller: '\u{1F4C4}',          // page
+  'http-call': '\u{1F310}',     // globe
   'route-handler': '\u{1F3AF}', // target
-  dependency: '\u{1F517}',   // link
+  'db-query': '\u{1F5C3}',      // card file box (database)
+  'db-join': '\u{1F517}',       // link
+  'db-result': '\u{1F4CA}',     // bar chart
+  dependency: '\u{1F4E6}',      // package
 };
 
 const STEP_COLORS: Record<FlowStepType, string> = {
   caller: '#4a90e8',
   'http-call': '#ff9800',
   'route-handler': '#7ed321',
+  'db-query': '#336791',
+  'db-join': '#2dd4bf',
+  'db-result': '#22c55e',
   dependency: '#9b59b6',
 };
 

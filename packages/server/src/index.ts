@@ -25,7 +25,7 @@ const staticRateLimit = rateLimit({
 /** Safe hostnames allowed for the proxy endpoint (SSRF prevention) */
 const ALLOWED_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
 
-export function createServer(targetPath: string, port: number = 3000): void {
+export function createServer(targetPath: string, port: number = 4000): void {
   const resolvedTarget = path.resolve(targetPath);
   const app = express();
 
@@ -235,7 +235,12 @@ export function createServer(targetPath: string, port: number = 3000): void {
   }
   app.use(express.static(uiDistPath));
 
-  // SPA fallback
+  // API 404 — prevent /api/* from falling through to the SPA
+  app.use('/api', (_req, res) => {
+    res.status(404).json({ error: 'API endpoint not found' });
+  });
+
+  // SPA fallback — only for non-API routes (client-side routing)
   app.get('*', staticRateLimit, (_req, res) => {
     res.sendFile(path.join(uiDistPath, 'index.html'));
   });

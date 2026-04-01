@@ -1,4 +1,5 @@
 export type {
+  MethodInfo,
   OmniNode,
   OmniEdge,
   OmniGraph,
@@ -12,6 +13,7 @@ export type {
   DatabaseConnectionConfig,
   DatabaseColumn,
   DatabaseIndex,
+  DatabaseForeignKey,
   DatabaseTable,
   DatabaseSchema,
   DatabaseQueryRequest,

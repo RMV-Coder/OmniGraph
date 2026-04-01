@@ -8,6 +8,8 @@ export interface ApiClientState {
   error: string | null;
 }
 
+const DEFAULT_BASE_URL = 'http://localhost:3000';
+
 const DEFAULT_REQUEST: ProxyRequest = {
   method: 'GET',
   url: '',
@@ -17,6 +19,7 @@ const DEFAULT_REQUEST: ProxyRequest = {
 };
 
 export function useApiClient() {
+  const [baseUrl, setBaseUrl] = useState(DEFAULT_BASE_URL);
   const [request, setRequest] = useState<ProxyRequest>({ ...DEFAULT_REQUEST });
   const [response, setResponse] = useState<ProxyResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -82,11 +85,26 @@ export function useApiClient() {
     setResponse(null);
 
     try {
+      // Resolve the full URL: if the user typed a full URL (http://...), use as-is.
+      // Otherwise, prepend the base URL.
+      let fullUrl = request.url;
+      if (fullUrl && !/^https?:\/\//i.test(fullUrl)) {
+        // Strip trailing slash from base, ensure leading slash on path
+        const base = baseUrl.replace(/\/+$/, '');
+        const urlPath = fullUrl.startsWith('/') ? fullUrl : '/' + fullUrl;
+        fullUrl = base + urlPath;
+      }
+
       const res = await fetch('/api/proxy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(request),
+        body: JSON.stringify({ ...request, url: fullUrl }),
       });
+
+      const contentType = res.headers.get('content-type') ?? '';
+      if (!contentType.includes('application/json')) {
+        throw new Error(`Proxy returned non-JSON response (${res.status} ${res.statusText})`);
+      }
 
       const data: ProxyResponse = await res.json();
       setResponse(data);
@@ -95,7 +113,7 @@ export function useApiClient() {
     } finally {
       setLoading(false);
     }
-  }, [request]);
+  }, [request, baseUrl]);
 
   const reset = useCallback(() => {
     setRequest({ ...DEFAULT_REQUEST });
@@ -104,6 +122,8 @@ export function useApiClient() {
   }, []);
 
   return {
+    baseUrl,
+    setBaseUrl,
     request,
     response,
     loading,

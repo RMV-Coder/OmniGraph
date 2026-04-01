@@ -1,8 +1,8 @@
 # Software Architecture Document (SAD)
 
 **Project:** OmniGraph
-**Version:** 3.0.0
-**Date:** March 2026
+**Version:** 4.0.0
+**Date:** April 2026
 
 ## 1. Architecture Overview
 
@@ -11,7 +11,7 @@ OmniGraph uses a **Local Client-Server Architecture** delivered via a CLI tool. 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  User's Terminal                                                │
-│  $ omnigraph --path ../my-project --port 3000                   │
+│  $ omnigraph --path ../my-project                               │
 │                                                                 │
 │  ┌──────────┐    ┌──────────────┐    ┌────────────────────┐     │
 │  │   CLI    │───>│    Server    │───>│     Parsers        │     │
@@ -30,7 +30,7 @@ OmniGraph uses a **Local Client-Server Architecture** delivered via a CLI tool. 
 │                         │                                       │
 │                  ┌──────▼───────┐                                │
 │                  │     UI       │   User's Browser               │
-│                  │  React Flow  │   http://localhost:3000        │
+│                  │  React Flow  │   http://localhost:4000        │
 │                  └──────────────┘                                │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -42,7 +42,7 @@ The project is an **npm workspaces monorepo** with five packages:
 ```
 packages/
 ├── types/     @omnigraph/types      → Shared interfaces (OmniNode, OmniEdge, OmniGraph)
-├── cli/       @omnigraph/cli        → Binary entry point
+├── cli/       @omnigraph/cli        → Multi-command CLI (graph, trace, fetch, methods, schema, serve)
 ├── server/    @omnigraph/server     → Express HTTP server
 ├── parsers/   @omnigraph/parsers    → AST parsing engine (pluggable)
 └── ui/        @omnigraph/ui         → React SPA (built as static files)
@@ -136,7 +136,7 @@ interface IParser {
 4. No changes needed in server, CLI, or graph engine
 
 **Current parsers:**
-- `TypeScriptParser` — handles `.ts`/`.tsx`/`.js`/`.jsx`, detects NestJS decorators and Next.js patterns, uses `@typescript-eslint/typescript-estree`
+- `TypeScriptParser` — handles `.ts`/`.tsx`/`.js`/`.jsx`, detects NestJS decorators and Next.js patterns, resolves tsconfig.json path aliases (`@/*`), extracts method-level info (functions, arrows, getters, setters), uses `@typescript-eslint/typescript-estree`
 - `PythonParser` — handles `.py`, detects FastAPI/Flask/Django patterns, regex-based
 - `PhpParser` — handles `.php`, detects Laravel patterns, regex-based
 - `MarkdownParser` — handles `.md`/`.mdx`, detects Obsidian wiki-links/embeds/frontmatter, regex-based (see ADR-003)
@@ -146,10 +146,11 @@ interface IParser {
 The frontend is a React SPA built with Vite and served as static files.
 
 **Layout System:**
-- 5 layout presets: Directory (grouped), Hierarchical (dagre TB), Force-Directed (d3-force), Grid, Mind Map (dagre LR/RL)
+- 6 layout presets: Directory (grouped), Hierarchical (dagre TB), Column Flow (4-column top-to-bottom), Force-Directed (d3-force), Grid, Mind Map (dagre LR/RL)
+- Column Flow layout auto-classifies nodes into Frontend/API/Services/Database columns by type and file path heuristics, with directory grouping within columns
 - Force-directed layout maintains a live d3-force simulation — dragging a node causes reactive push/pull physics on nearby nodes
 - Layout computation is done client-side after fetching graph data
-- Hub-centric compaction uses d3-force to pull filtered nodes toward the most-connected hub node(s)
+- Hub-centric compaction uses d3-force to pull filtered nodes toward the most-connected hub node(s). Column Flow uses column-aware compaction that preserves X positions and only collapses vertical gaps.
 
 **Sidebar:**
 - Right-side resizable drawer with drag handle, four tabs: Graph, API, Trace, Settings
@@ -185,6 +186,9 @@ The frontend is a React SPA built with Vite and served as static files.
 | `php-laravel-model` | Coral (#f4645f) | PHP |
 | `php-laravel-middleware` | Orange-Red (#fb503b) | PHP |
 | `php-laravel-route` | Deep Orange (#ff7043) | PHP |
+| `db-table` | Steel Blue (#336791) | Database |
+| `db-collection` | Green (#47a248) | Database |
+| `method-node` | Indigo (#5a5a8a) | Expanded Method |
 
 ## 7. Technology Choices
 
@@ -213,8 +217,8 @@ The frontend is a React SPA built with Vite and served as static files.
 
 ## 9. Key Design Decisions
 
-1. **One node per file, not per function/class** — Maps file-level dependencies. Method-level granularity is a future goal.
-2. **5 layout presets** — Directory (grouped by folder), Hierarchical (dagre), Force-Directed (d3-force), Grid, Mind Map (dagre LR/RL). Replaced the original grid-only layout.
+1. **One node per file, expandable to methods** — Maps file-level dependencies by default. Users can expand individual file nodes into method-level child nodes (TypeScript only). Full inter-method call graphs are a future goal.
+2. **6 layout presets** — Directory (grouped by folder), Hierarchical (dagre), Column Flow (4-column auto-classified), Force-Directed (d3-force), Grid, Mind Map (dagre LR/RL).
 3. **UI built ahead of time** — The server serves pre-built static files from `packages/ui/dist`. There is no dev server proxy setup.
 4. **Types shared via package** — `OmniGraph`/`OmniNode`/`OmniEdge` are defined in the `@omnigraph/types` package and imported by both parsers and UI.
 5. **Regex over Tree-sitter for Phase 2** — File-level import/decorator extraction doesn't require full AST parsing. Regex keeps installation simple and the `IParser` interface synchronous. See ADR-002.

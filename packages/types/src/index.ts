@@ -1,10 +1,20 @@
 // ─── Core Graph Model ────────────────────────────────────────────────
 
+export interface MethodInfo {
+  name: string;
+  line: number;
+  endLine: number;
+  kind: 'function' | 'method' | 'arrow' | 'getter' | 'setter';
+  exported: boolean;
+  params: string[];
+}
+
 export interface OmniNode {
   id: string;
   type: string;
   label: string;
   metadata: Record<string, string>;
+  methods?: MethodInfo[];
 }
 
 export interface OmniEdge {
@@ -41,7 +51,7 @@ export interface ProxyResponse {
 
 // ─── Flow Tracer ─────────────────────────────────────────────────────
 
-export type FlowStepType = 'caller' | 'http-call' | 'route-handler' | 'dependency';
+export type FlowStepType = 'caller' | 'http-call' | 'route-handler' | 'db-query' | 'db-join' | 'db-result' | 'dependency';
 
 export interface FlowTraceStep {
   nodeId: string;
@@ -125,12 +135,23 @@ export interface DatabaseIndex {
   unique: boolean;
 }
 
+export interface DatabaseForeignKey {
+  name: string;
+  columns: string[];
+  referencedTable: string;
+  referencedSchema?: string;
+  referencedColumns: string[];
+  onDelete?: string;
+  onUpdate?: string;
+}
+
 export interface DatabaseTable {
   name: string;
   schema?: string;            // PostgreSQL schema (e.g. 'public')
   type?: 'table' | 'view' | 'collection';
   columns: DatabaseColumn[];
   indexes: DatabaseIndex[];
+  foreignKeys: DatabaseForeignKey[];
   rowCount?: number;
 }
 

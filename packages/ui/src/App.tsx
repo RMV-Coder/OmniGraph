@@ -19,7 +19,7 @@ import {
   forceLink as d3ForceLink,
 } from 'd3-force';
 import type { SimulationNodeDatum } from 'd3-force';
-import type { OmniGraph, OmniNode, OmniEdge, HttpMethod, DatabaseSchema, DatabaseTable } from './types';
+import type { OmniGraph, OmniNode, OmniEdge, HttpMethod, DatabaseSchema, DatabaseTable, MethodInfo } from './types';
 import Sidebar from './components/Sidebar';
 import type { SidebarTab } from './components/Sidebar';
 import DirectoryGroupNode from './components/DirectoryGroupNode';
@@ -44,10 +44,31 @@ const COMPACT_TRANSITION_CSS = `
 }
 `;
 
+/** Route node types that typically query databases */
+const ROUTE_NODE_TYPES = new Set([
+  'nextjs-api-route', 'python-fastapi-route', 'php-laravel-controller',
+  'nestjs-controller', 'python-django-view',
+]);
+
+/** Normalize a name for fuzzy table matching: lowercase, strip separators */
+function normalizeName(s: string): string {
+  return s.toLowerCase().replace(/[-_\s]/g, '');
+}
+
+/** Simple pluralize: 'user' → ['users', 'useres', 'useries', 'user'] */
+function pluralVariants(base: string): string[] {
+  const variants = [base, base + 's', base + 'es'];
+  if (base.endsWith('y')) variants.push(base.slice(0, -1) + 'ies');
+  if (base.endsWith('s')) variants.push(base.slice(0, -1));
+  if (base.endsWith('es')) variants.push(base.slice(0, -2));
+  if (base.endsWith('ies')) variants.push(base.slice(0, -3) + 'y');
+  return variants;
+}
+
 /**
  * Merge database schema entities into the code graph.
- * Creates OmniNode entries for each table/collection and OmniEdge entries
- * linking code nodes that reference them (by table name match in metadata or label).
+ * Creates OmniNode entries for each table/collection, FK edges between tables,
+ * and OmniEdge entries linking code/route nodes to the DB tables they reference.
  */
 function mergeDbSchema(
   codeGraph: OmniGraph,
@@ -57,6 +78,18 @@ function mergeDbSchema(
 
   const dbNodes: OmniNode[] = [];
   const dbEdges: OmniEdge[] = [];
+  const addedEdgeIds = new Set<string>();
+
+  const addEdge = (edge: OmniEdge) => {
+    if (!addedEdgeIds.has(edge.id)) {
+      addedEdgeIds.add(edge.id);
+      dbEdges.push(edge);
+    }
+  };
+
+  // ── 1. Create DB table/collection nodes ──
+  const dbNodeIds = new Map<string, string>(); // "schema.tableName" → nodeId
+  const tableNameToNodeId = new Map<string, string>(); // lowercase table name → nodeId
 
   for (const table of schema.tables) {
     const nodeType =
@@ -78,26 +111,45 @@ function mergeDbSchema(
         columnCount: String(table.columns.length),
         rowCount: table.rowCount != null ? String(table.rowCount) : '',
         indexCount: String(table.indexes.length),
+        foreignKeyCount: String(table.foreignKeys?.length ?? 0),
       },
     });
+
+    const key = `${table.schema ?? 'default'}.${table.name}`;
+    dbNodeIds.set(key, nodeId);
+    tableNameToNodeId.set(table.name.toLowerCase(), nodeId);
   }
 
-  // Match code nodes to DB tables by checking if the code node's label or metadata
-  // references a table name. This is heuristic-based (similar to cross-network tracing).
-  const tableNames = new Map<string, string>(); // lowercase table name → nodeId
+  // ── 2. Create FK/reference edges between DB tables (ERD-style) ──
   for (const table of schema.tables) {
-    const nodeId = `db://${schema.engine}/${schema.database}/${table.schema ?? 'default'}/${table.name}`;
-    tableNames.set(table.name.toLowerCase(), nodeId);
+    const sourceKey = `${table.schema ?? 'default'}.${table.name}`;
+    const sourceNodeId = dbNodeIds.get(sourceKey);
+    if (!sourceNodeId) continue;
+
+    for (const fk of table.foreignKeys ?? []) {
+      const targetKey = `${fk.referencedSchema ?? table.schema ?? 'default'}.${fk.referencedTable}`;
+      const targetNodeId = dbNodeIds.get(targetKey) ?? tableNameToNodeId.get(fk.referencedTable.toLowerCase());
+      if (!targetNodeId) continue;
+
+      const fkLabel = `${fk.columns.join(',')} → ${fk.referencedTable}.${fk.referencedColumns.join(',')}`;
+      addEdge({
+        id: `e-fk-${fk.name}`,
+        source: sourceNodeId,
+        target: targetNodeId,
+        label: fkLabel,
+      });
+    }
   }
 
+  // ── 3. Match code nodes to DB tables ──
   for (const codeNode of codeGraph.nodes) {
-    // Check metadata for DB references (dbTables, or model/entity patterns)
+    // 3a. Explicit metadata (dbTables field from parsers)
     const dbTablesStr = codeNode.metadata.dbTables;
     if (dbTablesStr) {
       for (const tableName of dbTablesStr.split(',').map((s) => s.trim().toLowerCase())) {
-        const dbNodeId = tableNames.get(tableName);
+        const dbNodeId = tableNameToNodeId.get(tableName);
         if (dbNodeId) {
-          dbEdges.push({
+          addEdge({
             id: `e-db-${codeNode.id}-${dbNodeId}`,
             source: codeNode.id,
             target: dbNodeId,
@@ -107,21 +159,41 @@ function mergeDbSchema(
       }
     }
 
-    // Heuristic: check if node type is a model/entity and the label matches a table name
+    // 3b. Model/entity types → match label to table name
     const isModelType =
       codeNode.type === 'python-django-model' ||
       codeNode.type === 'php-laravel-model';
 
     if (isModelType) {
-      // Django models often map to lowercase+plural table names, but try exact + lowercase
-      const label = codeNode.label.toLowerCase().replace(/[-_]/g, '');
-      for (const [tName, tNodeId] of tableNames) {
-        const normalized = tName.toLowerCase().replace(/[-_]/g, '');
-        if (normalized === label || normalized === label + 's' || normalized + 's' === label) {
-          const edgeId = `e-db-${codeNode.id}-${tNodeId}`;
-          if (!dbEdges.some((e) => e.id === edgeId)) {
-            dbEdges.push({
-              id: edgeId,
+      const normalized = normalizeName(codeNode.label);
+      for (const [tName, tNodeId] of tableNameToNodeId) {
+        const tNorm = normalizeName(tName);
+        if (pluralVariants(normalized).includes(tNorm) || pluralVariants(tNorm).includes(normalized)) {
+          addEdge({
+            id: `e-db-${codeNode.id}-${tNodeId}`,
+            source: codeNode.id,
+            target: tNodeId,
+            label: 'queries',
+          });
+        }
+      }
+    }
+
+    // 3c. API route nodes → match route path segments to table names
+    if (ROUTE_NODE_TYPES.has(codeNode.type)) {
+      const route = codeNode.metadata.route ?? codeNode.label;
+      // Extract path segments: "/api/users/[id]/posts" → ["users", "posts"]
+      const segments = route.split('/')
+        .map((s: string) => s.replace(/[\[\]\(\)\{\}:*]/g, '').toLowerCase())
+        .filter((s: string) => s && s !== 'api' && s !== 'v1' && s !== 'v2' && s !== 'v3');
+
+      for (const seg of segments) {
+        const segNorm = normalizeName(seg);
+        for (const [tName, tNodeId] of tableNameToNodeId) {
+          const tNorm = normalizeName(tName);
+          if (pluralVariants(segNorm).includes(tNorm) || pluralVariants(tNorm).includes(segNorm)) {
+            addEdge({
+              id: `e-db-${codeNode.id}-${tNodeId}`,
               source: codeNode.id,
               target: tNodeId,
               label: 'queries',
@@ -132,10 +204,123 @@ function mergeDbSchema(
     }
   }
 
+  // ── 4. Follow import chains to find indirect DB references ──
+  // If a code node imports a file whose name matches a DB table,
+  // create a "queries" edge from that code node to the DB table.
+  // Also propagate: if an API route imports lib/db/users, and users matches the users table,
+  // connect the route to the users table transitively.
+  const importEdges = codeGraph.edges.filter(e => e.label === 'imports');
+  const importTargetIndex = new Map<string, string[]>(); // target → [source1, source2, ...]
+  for (const e of importEdges) {
+    if (!importTargetIndex.has(e.target)) importTargetIndex.set(e.target, []);
+    importTargetIndex.get(e.target)!.push(e.source);
+  }
+
+  for (const codeNode of codeGraph.nodes) {
+    // Get the filename without extension: "/project/src/lib/db/users.ts" → "users"
+    const fileParts = codeNode.id.split('/');
+    const filename = fileParts[fileParts.length - 1]?.replace(/\.\w+$/, '') ?? '';
+    if (!filename || filename === 'index') continue;
+
+    const fnNorm = normalizeName(filename);
+    for (const [tName, tNodeId] of tableNameToNodeId) {
+      const tNorm = normalizeName(tName);
+      if (pluralVariants(fnNorm).includes(tNorm) || pluralVariants(tNorm).includes(fnNorm)) {
+        // This code file's name matches a DB table → connect the file to the table
+        addEdge({
+          id: `e-db-${codeNode.id}-${tNodeId}`,
+          source: codeNode.id,
+          target: tNodeId,
+          label: 'queries',
+        });
+
+        // Also connect any upstream importers (especially API routes) to the table
+        const importers = importTargetIndex.get(codeNode.id) ?? [];
+        for (const importerId of importers) {
+          addEdge({
+            id: `e-db-${importerId}-${tNodeId}`,
+            source: importerId,
+            target: tNodeId,
+            label: 'queries',
+          });
+        }
+      }
+    }
+  }
+
   return {
     nodes: [...codeGraph.nodes, ...dbNodes],
     edges: [...codeGraph.edges, ...dbEdges],
   };
+}
+
+/**
+ * Expand method-level nodes for selected files.
+ * Replaces file nodes in expandedIds with their individual method nodes,
+ * and re-routes edges accordingly.
+ */
+function expandMethods(
+  graph: OmniGraph,
+  expandedIds: Set<string>,
+): OmniGraph {
+  if (expandedIds.size === 0) return graph;
+
+  const newNodes: OmniNode[] = [];
+  const newEdges: OmniEdge[] = [];
+  const methodNodeIds = new Map<string, string[]>(); // fileId → [methodNodeId, ...]
+
+  for (const node of graph.nodes) {
+    if (expandedIds.has(node.id) && node.methods && node.methods.length > 0) {
+      // Replace file node with its method nodes
+      const mIds: string[] = [];
+      for (const method of node.methods) {
+        const mId = `${node.id}#${method.name}`;
+        mIds.push(mId);
+        const paramStr = method.params.length > 0 ? `(${method.params.join(', ')})` : '()';
+        newNodes.push({
+          id: mId,
+          type: 'method-node',
+          label: `${method.exported ? '⬆ ' : ''}${method.name}${paramStr}`,
+          metadata: {
+            filePath: node.metadata.filePath ?? '',
+            route: node.metadata.route ?? '',
+            parentFile: node.id,
+            line: String(method.line),
+            endLine: String(method.endLine),
+            kind: method.kind,
+          },
+        });
+      }
+      methodNodeIds.set(node.id, mIds);
+    } else {
+      newNodes.push(node);
+    }
+  }
+
+  // Re-route edges: if an edge points to/from an expanded file, redirect to all its methods
+  for (const edge of graph.edges) {
+    const srcMethods = methodNodeIds.get(edge.source);
+    const tgtMethods = methodNodeIds.get(edge.target);
+
+    if (srcMethods && tgtMethods) {
+      // Both expanded — connect first method of source to first of target (simplified)
+      newEdges.push({ ...edge, id: `${edge.id}#m`, source: srcMethods[0], target: tgtMethods[0] });
+    } else if (srcMethods) {
+      // Source expanded — connect all exported methods to the target
+      for (const mId of srcMethods) {
+        newEdges.push({ ...edge, id: `${edge.id}#${mId}`, source: mId });
+      }
+    } else if (tgtMethods) {
+      // Target expanded — connect source to all methods
+      for (const mId of tgtMethods) {
+        newEdges.push({ ...edge, id: `${edge.id}#${mId}`, target: mId });
+      }
+    } else {
+      newEdges.push(edge);
+    }
+  }
+
+  return { nodes: newNodes, edges: newEdges };
 }
 
 /** Determine which node IDs match the current search + type filters */
@@ -309,6 +494,89 @@ function compactNodes(visibleNodes: Node[], visibleEdges: Edge[]): Node[] {
 }
 
 /**
+ * Column-aware compact: preserves each node's X (column) position
+ * and only collapses vertical gaps between groups of nodes.
+ * Nodes within the same column are sorted by their current Y and
+ * re-stacked tightly with a small gap between Y-clusters.
+ */
+function compactColumnsNodes(visibleNodes: Node[]): Node[] {
+  if (visibleNodes.length <= 1) return visibleNodes;
+
+  // Skip header nodes (non-interactive column labels)
+  const headerNodes = visibleNodes.filter(n => n.id.startsWith('__col-header-'));
+  const realNodes = visibleNodes.filter(n => !n.id.startsWith('__col-header-'));
+
+  // Group nodes by their X position (column)
+  const columnBuckets = new Map<number, Node[]>();
+  for (const n of realNodes) {
+    const x = Math.round(n.position.x); // round to avoid float drift
+    if (!columnBuckets.has(x)) columnBuckets.set(x, []);
+    columnBuckets.get(x)!.push(n);
+  }
+
+  const ROW_H = 52;        // tight vertical spacing between nodes
+  const CLUSTER_GAP = 28;  // extra gap between Y-clusters (was separated by large empty space)
+  const CLUSTER_THRESHOLD = ROW_H * 3; // if gap > this, it's a cluster boundary
+
+  const positionMap = new Map<string, { x: number; y: number }>();
+
+  for (const [x, colNodes] of columnBuckets) {
+    // Sort by current Y position to preserve relative order
+    colNodes.sort((a, b) => a.position.y - b.position.y);
+
+    let currentY = colNodes[0].position.y; // start from first node's Y (preserves top alignment)
+    // Use the minimum Y across all columns as a shared start
+    // (will normalize below)
+
+    for (let i = 0; i < colNodes.length; i++) {
+      if (i === 0) {
+        positionMap.set(colNodes[i].id, { x, y: currentY });
+      } else {
+        const gap = colNodes[i].position.y - colNodes[i - 1].position.y;
+        if (gap > CLUSTER_THRESHOLD) {
+          // Cluster boundary — add a small gap instead of the huge one
+          currentY += ROW_H + CLUSTER_GAP;
+        } else {
+          currentY += ROW_H;
+        }
+        positionMap.set(colNodes[i].id, { x, y: currentY });
+      }
+    }
+  }
+
+  // Normalize: find the minimum starting Y across all columns and align them
+  // so all columns start at roughly the same top position
+  const columnMinY = new Map<number, number>();
+  const columnOrigMinY = new Map<number, number>();
+  for (const [x, colNodes] of columnBuckets) {
+    const origMinY = Math.min(...colNodes.map(n => n.position.y));
+    const newMinY = positionMap.get(colNodes[0].id)!.y;
+    columnMinY.set(x, newMinY);
+    columnOrigMinY.set(x, origMinY);
+  }
+
+  // Find the global starting Y (top of all headers + margin)
+  const globalStartY = Math.min(...Array.from(columnOrigMinY.values()));
+
+  // Shift each column so they all start at the same top
+  for (const [x, colNodes] of columnBuckets) {
+    const currentMin = columnMinY.get(x)!;
+    const shift = globalStartY - currentMin;
+    if (Math.abs(shift) > 1) {
+      for (const n of colNodes) {
+        const pos = positionMap.get(n.id)!;
+        positionMap.set(n.id, { x: pos.x, y: pos.y + shift });
+      }
+    }
+  }
+
+  return visibleNodes.map(n => {
+    const pos = positionMap.get(n.id);
+    return pos ? { ...n, position: pos } : n;
+  });
+}
+
+/**
  * When hiding nodes, un-nest them from directoryGroup parents.
  * Converts relative (parent-offset) positions to absolute positions so
  * compaction and edge rendering work correctly after parent groups are removed.
@@ -463,6 +731,8 @@ function GraphApp() {
   const [searchDepth, setSearchDepth] = useState(2);
   const [activeTab, setActiveTab] = useState<SidebarTab>('controls');
   const [isCompacting, setIsCompacting] = useState(false);
+  const [highlightedDbNodes, setHighlightedDbNodes] = useState<Set<string>>(new Set());
+  const [expandedMethodNodes, setExpandedMethodNodes] = useState<Set<string>>(new Set());
   const compactTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Stores compacted node positions so they survive re-renders (trace clicks, etc.)
   // Also tracks a fingerprint of the filter state when compaction happened,
@@ -497,11 +767,12 @@ function GraphApp() {
 
   const db = useDatabase();
 
-  // Merge code graph + DB schema into one unified graph
+  // Merge code graph + DB schema into one unified graph, then expand methods if requested
   const mergedGraphData = useMemo<OmniGraph | null>(() => {
     if (!graphData) return null;
-    return mergeDbSchema(graphData, db.schema);
-  }, [graphData, db.schema]);
+    const merged = mergeDbSchema(graphData, db.schema);
+    return expandMethods(merged, expandedMethodNodes);
+  }, [graphData, db.schema, expandedMethodNodes]);
 
   const { exportPng, exportSvg, exportJson, exportGif, gifProgress } = useExport(mergedGraphData);
   const apiClient = useApiClient();
@@ -554,6 +825,9 @@ function GraphApp() {
       });
   }, []);
 
+  // Track layout transition to temporarily suppress edge animation
+  const layoutTransitionRef = useRef(false);
+
   useEffect(() => {
     if (!mergedGraphData) return;
     if (isForceActive) {
@@ -562,16 +836,21 @@ function GraphApp() {
       setTimeout(() => fitView({ padding: 0.1 }), 200);
       return;
     }
+    // Suppress edge animation during layout switch to prevent SVG rendering storm
+    layoutTransitionRef.current = true;
     const options = { mindmapDirection };
     const result = applyLayout(layoutPreset, mergedGraphData, options);
     setLayoutNodes(result.nodes);
     setLayoutEdges(result.edges);
-    setTimeout(() => fitView({ padding: 0.1 }), 50);
+    setTimeout(() => {
+      layoutTransitionRef.current = false;
+      fitView({ padding: 0.1 });
+    }, 80);
   }, [mergedGraphData, layoutPreset, mindmapDirection]);
 
   // Apply edge label settings: hide/show labels based on user preferences
   const applyEdgeLabelSettings = useCallback((edgeList: Edge[]): Edge[] => {
-    const { showImportLabels, showLinksToLabels, showEmbedsLabels, showHttpLabels, showQueriesLabels, labelColor, labelFontSize } = settings.edgeLabels;
+    const { showImportLabels, showLinksToLabels, showEmbedsLabels, showHttpLabels, showQueriesLabels, showFkLabels, labelColor, labelFontSize } = settings.edgeLabels;
     return edgeList.map(edge => {
       const label = typeof edge.label === 'string' ? edge.label : '';
       let hideLabel = false;
@@ -579,6 +858,8 @@ function GraphApp() {
       if (label === 'links to' && !showLinksToLabels) hideLabel = true;
       if (label === 'embeds' && !showEmbedsLabels) hideLabel = true;
       if (label === 'queries' && !showQueriesLabels) hideLabel = true;
+      // FK labels contain "→" (e.g. "user_id → users.id")
+      if (edge.id.startsWith('e-fk-') && !showFkLabels) hideLabel = true;
       // HTTP labels are things like "GET /api/users", "POST /api/auth/login", etc.
       if (/^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\s+/i.test(label) && !showHttpLabels) hideLabel = true;
 
@@ -603,7 +884,9 @@ function GraphApp() {
     // Use current nodes/edges from state
     setNodes(currentNodes => {
       const flatNodes = unnestFromGroups(currentNodes);
-      const compacted = compactNodes(flatNodes, edges);
+      const compacted = layoutPreset === 'columns'
+        ? compactColumnsNodes(flatNodes)
+        : compactNodes(flatNodes, edges);
 
       // Save compacted positions so they persist across re-renders (e.g. trace clicks)
       // Fingerprint captures the filter state — if it changes, compaction is stale
@@ -626,6 +909,13 @@ function GraphApp() {
   useEffect(() => {
     if (!mergedGraphData || isForceActive) return;
 
+    // If layout data is empty (e.g. during layout transition), clear canvas
+    if (layoutNodes.length === 0 && layoutEdges.length === 0) {
+      setNodes([]);
+      setEdges([]);
+      return;
+    }
+
     // --- Step 1: Filter nodes/edges ---
     let { nodes: styled, edges: styledEdges } = applyFilterStyles(
       layoutNodes, layoutEdges, matchingIds, isFiltering, searchFilterMode,
@@ -647,7 +937,51 @@ function GraphApp() {
     // --- Step 3: Apply edge label settings ---
     styledEdges = applyEdgeLabelSettings(styledEdges);
 
-    // --- Step 4: Trace highlighting (style-only, no position changes) ---
+    // --- Step 4: Apply edge animation setting (suppress during layout transition) ---
+    const shouldAnimate = settings.graph.animateEdges && !layoutTransitionRef.current;
+    styledEdges = styledEdges.map(e => ({ ...e, animated: shouldAnimate }));
+
+    // --- Step 5: Click-highlight connected DB tables when an API route is selected ---
+    if (highlightedDbNodes.size > 0 && selected) {
+      styled = styled.map(node => {
+        if (node.type === 'directoryGroup') return node;
+        const isSelected = node.id === selected.id;
+        const isHighlighted = highlightedDbNodes.has(node.id);
+        if (isSelected || isHighlighted) {
+          return {
+            ...node,
+            style: {
+              ...node.style,
+              opacity: 1,
+              boxShadow: isHighlighted
+                ? '0 0 16px 4px rgba(51, 103, 145, 0.7)'
+                : '0 0 12px 3px rgba(74, 144, 232, 0.6)',
+              transition: 'opacity 0.3s, box-shadow 0.3s',
+            },
+          };
+        }
+        return {
+          ...node,
+          style: { ...node.style, opacity: 0.2, transition: 'opacity 0.3s' },
+        };
+      });
+      const highlightNodeIds = new Set([selected.id, ...highlightedDbNodes]);
+      styledEdges = styledEdges.map(edge => {
+        const connects = highlightNodeIds.has(edge.source) && highlightNodeIds.has(edge.target);
+        return {
+          ...edge,
+          style: {
+            ...edge.style,
+            opacity: connects ? 1 : 0.08,
+            strokeWidth: connects ? 3 : (edge.style?.strokeWidth ?? 1),
+            transition: 'opacity 0.3s',
+          },
+          animated: connects ? shouldAnimate : false,
+        };
+      });
+    }
+
+    // --- Step 6: Trace highlighting (style-only, no position changes) ---
     if (flowTracer.isTracing && flowTracer.currentStep) {
       const result = applyTraceStyles(
         styled, styledEdges,
@@ -658,7 +992,7 @@ function GraphApp() {
       styledEdges = result.edges;
     }
 
-    // --- Step 5: Final safety — remove any orphan edges that reference non-existent nodes ---
+    // --- Step 6: Final safety — remove any orphan edges that reference non-existent nodes ---
     const finalNodeIds = new Set(styled.map(n => n.id));
     styledEdges = styledEdges.filter(e => finalNodeIds.has(e.source) && finalNodeIds.has(e.target));
 
@@ -666,7 +1000,8 @@ function GraphApp() {
     setEdges(styledEdges);
   }, [layoutNodes, layoutEdges, matchingIds, isFiltering, isForceActive,
       searchFilterMode, flowTracer.isTracing, flowTracer.currentStep,
-      applyEdgeLabelSettings, layoutPreset, searchQuery, activeTypes, searchDepth]);
+      applyEdgeLabelSettings, layoutPreset, searchQuery, activeTypes, searchDepth,
+      settings.graph.animateEdges, highlightedDbNodes, selected]);
 
   const matchCount = matchingIds.size;
 
@@ -681,10 +1016,32 @@ function GraphApp() {
 
   const onNodeClick: NodeMouseHandler = useCallback((_evt, node) => {
     if (node.data.omniNode) {
-      setSelected(node.data.omniNode as OmniNode);
+      const omniNode = node.data.omniNode as OmniNode;
+      setSelected(omniNode);
       setActiveTab('controls');
+
+      // Highlight connected DB tables when clicking an API route node
+      if (ROUTE_NODE_TYPES.has(omniNode.type) && mergedGraphData) {
+        const connectedDbIds = new Set<string>();
+        for (const edge of mergedGraphData.edges) {
+          if (edge.source === node.id && (edge.id.startsWith('e-db-') || edge.id.startsWith('e-fk-'))) {
+            connectedDbIds.add(edge.target);
+            // Also follow FK edges from connected tables
+            for (const fkEdge of mergedGraphData.edges) {
+              if (fkEdge.id.startsWith('e-fk-') &&
+                  (fkEdge.source === edge.target || fkEdge.target === edge.target)) {
+                connectedDbIds.add(fkEdge.source);
+                connectedDbIds.add(fkEdge.target);
+              }
+            }
+          }
+        }
+        setHighlightedDbNodes(connectedDbIds);
+      } else {
+        setHighlightedDbNodes(new Set());
+      }
     }
-  }, []);
+  }, [mergedGraphData]);
 
   const onEdgeClick = useCallback((_evt: React.MouseEvent, edge: Edge) => {
     // For cross-network edges, open the API client with pre-filled data
@@ -706,6 +1063,17 @@ function GraphApp() {
 
   const onPaneClick = useCallback(() => {
     setSelected(null);
+    setHighlightedDbNodes(new Set());
+  }, []);
+
+  /** Toggle method-level expansion for a file node */
+  const handleExpandMethods = useCallback((nodeId: string) => {
+    setExpandedMethodNodes(prev => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      return next;
+    });
   }, []);
 
   /** Switch from flow tracer to API client with data from the traced edge */
@@ -879,6 +1247,8 @@ function GraphApp() {
         onExportJson={exportJson}
         onExportGif={exportGif}
         // API Client
+        apiBaseUrl={apiClient.baseUrl}
+        onApiBaseUrlChange={apiClient.setBaseUrl}
         apiRequest={apiClient.request}
         apiResponse={apiClient.response}
         apiLoading={apiClient.loading}
@@ -933,6 +1303,9 @@ function GraphApp() {
         onDbLoadSchema={db.loadSchema}
         onDbExecuteQuery={db.executeQuery}
         onDbClearQuery={db.clearQuery}
+        // Method expansion
+        expandedMethodNodes={expandedMethodNodes}
+        onExpandMethods={handleExpandMethods}
       />
     </div>
   );

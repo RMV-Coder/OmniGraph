@@ -26,6 +26,8 @@ export const NODE_COLORS: Record<string, string> = {
   'db-table': '#336791',         // PostgreSQL blue
   'db-collection': '#4DB33D',    // MongoDB green
   'db-view': '#8e44ad',          // Purple for views
+  // Method-level nodes
+  'method-node': '#5a5a8a',
   // PHP
   'php-file': '#777bb4',
   'php-laravel-controller': '#ff2d20',
@@ -57,6 +59,7 @@ export function styleNode(n: OmniNode, overrides?: Partial<Node>): Node {
 
 export function styleEdge(e: OmniEdge): Edge {
   const isHttpEdge = e.id.startsWith('e-http-');
+  const isFkEdge = e.id.startsWith('e-fk-');
   const isDbEdge = e.id.startsWith('e-db-');
   let stroke = '#888';
   let strokeWidth = 1;
@@ -68,7 +71,13 @@ export function styleEdge(e: OmniEdge): Edge {
     strokeWidth = 2;
     strokeDasharray = '6 3';
     labelFill = '#ff9800';
+  } else if (isFkEdge) {
+    // FK/reference edges: solid teal line (ERD-style)
+    stroke = '#2dd4bf';
+    strokeWidth = 2;
+    labelFill = '#2dd4bf';
   } else if (isDbEdge) {
+    // Code → DB table edges: dashed blue
     stroke = '#336791';
     strokeWidth = 2;
     strokeDasharray = '4 4';
@@ -81,7 +90,7 @@ export function styleEdge(e: OmniEdge): Edge {
     target: e.target,
     label: e.label,
     data: { omniEdge: e },
-    animated: true,
+    animated: false,
     style: { stroke, strokeWidth, strokeDasharray },
     labelStyle: labelFill ? { fill: labelFill, fontSize: 10, fontWeight: 600 } : undefined,
   };

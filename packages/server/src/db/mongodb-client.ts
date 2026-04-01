@@ -6,6 +6,7 @@ import type {
   DatabaseTable,
   DatabaseColumn,
   DatabaseIndex,
+  DatabaseForeignKey,
   DatabaseQueryResult,
 } from '@omnigraph/types';
 
@@ -107,6 +108,37 @@ function inferColumnsFromDocs(docs: Record<string, unknown>[]): DatabaseColumn[]
   return columns;
 }
 
+/**
+ * Heuristic: guess which collection an ObjectId field references.
+ * e.g. `userId` → `users`, `category_id` → `categories`, `authorId` → `authors`
+ */
+function guessReferencedCollection(
+  fieldName: string,
+  collectionNames: Set<string>,
+): string | null {
+  // Strip trailing Id, _id, ID
+  const base = fieldName.replace(/[_-]?[Ii][Dd]$/, '');
+  if (!base) return null;
+
+  // Try plural forms: base, base + 's', base + 'es', base with 'y' → 'ies'
+  const candidates = [
+    base,
+    base + 's',
+    base + 'es',
+    base.endsWith('y') ? base.slice(0, -1) + 'ies' : null,
+    // Also try lowercase
+    base.toLowerCase(),
+    base.toLowerCase() + 's',
+    base.toLowerCase() + 'es',
+    base.toLowerCase().endsWith('y') ? base.toLowerCase().slice(0, -1) + 'ies' : null,
+  ].filter(Boolean) as string[];
+
+  for (const candidate of candidates) {
+    if (collectionNames.has(candidate)) return candidate;
+  }
+  return null;
+}
+
 /** Get full schema for a MongoDB database */
 export async function getMongoSchema(
   config: DatabaseConnectionConfig,
@@ -157,12 +189,30 @@ export async function getMongoSchema(
         type: 'collection',
         columns: inferColumnsFromDocs(sampleDocs),
         indexes: indexSpecs,
+        foreignKeys: [],  // populated below via heuristics
         rowCount,
       });
     }
 
     // Sort alphabetically
     tables.sort((a, b) => a.name.localeCompare(b.name));
+
+    // Heuristic FK detection: ObjectId fields named like `userId` → `users` collection
+    const collectionNames = new Set(tables.map(t => t.name));
+    for (const table of tables) {
+      for (const col of table.columns) {
+        if (col.type !== 'ObjectId' || col.name === '_id') continue;
+        const ref = guessReferencedCollection(col.name, collectionNames);
+        if (ref) {
+          table.foreignKeys.push({
+            name: `ref_${table.name}_${col.name}`,
+            columns: [col.name],
+            referencedTable: ref,
+            referencedColumns: ['_id'],
+          });
+        }
+      }
+    }
 
     return {
       engine: 'mongodb' as const,

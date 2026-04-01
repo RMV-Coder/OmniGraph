@@ -6,6 +6,7 @@ import type {
   DatabaseTable,
   DatabaseColumn,
   DatabaseIndex,
+  DatabaseForeignKey,
   DatabaseQueryResult,
 } from '@omnigraph/types';
 
@@ -106,6 +107,31 @@ export async function getPostgresSchema(
       ORDER BY schemaname, tablename, indexname
     `);
 
+    // Get foreign keys
+    const fkRes = await client.query(`
+      SELECT
+        tc.constraint_name,
+        tc.table_schema,
+        tc.table_name,
+        kcu.column_name,
+        ccu.table_schema AS referenced_schema,
+        ccu.table_name AS referenced_table,
+        ccu.column_name AS referenced_column,
+        rc.delete_rule,
+        rc.update_rule
+      FROM information_schema.table_constraints tc
+      JOIN information_schema.key_column_usage kcu
+        ON tc.constraint_name = kcu.constraint_name
+        AND tc.table_schema = kcu.table_schema
+      JOIN information_schema.constraint_column_usage ccu
+        ON tc.constraint_name = ccu.constraint_name
+        AND tc.table_schema = ccu.constraint_schema
+      JOIN information_schema.referential_constraints rc
+        ON tc.constraint_name = rc.constraint_name
+        AND tc.table_schema = rc.constraint_schema
+      WHERE tc.constraint_type = 'FOREIGN KEY'
+    `);
+
     // Get row counts (approximate via pg_stat)
     const countRes = await client.query(`
       SELECT
@@ -144,6 +170,41 @@ export async function getPostgresSchema(
       });
     }
 
+    // Build foreign key lookup: schema.table -> DatabaseForeignKey[]
+    // Group by constraint name first (composite FKs have multiple rows)
+    const fkGrouped = new Map<string, { tableKey: string; name: string; cols: string[]; refSchema: string; refTable: string; refCols: string[]; onDelete?: string; onUpdate?: string }>();
+    for (const row of fkRes.rows) {
+      const groupKey = `${row.table_schema}.${row.table_name}.${row.constraint_name}`;
+      if (!fkGrouped.has(groupKey)) {
+        fkGrouped.set(groupKey, {
+          tableKey: `${row.table_schema}.${row.table_name}`,
+          name: row.constraint_name,
+          cols: [],
+          refSchema: row.referenced_schema,
+          refTable: row.referenced_table,
+          refCols: [],
+          onDelete: row.delete_rule === 'NO ACTION' ? undefined : row.delete_rule,
+          onUpdate: row.update_rule === 'NO ACTION' ? undefined : row.update_rule,
+        });
+      }
+      const group = fkGrouped.get(groupKey)!;
+      group.cols.push(row.column_name);
+      group.refCols.push(row.referenced_column);
+    }
+    const fkLookup = new Map<string, DatabaseForeignKey[]>();
+    for (const fk of fkGrouped.values()) {
+      if (!fkLookup.has(fk.tableKey)) fkLookup.set(fk.tableKey, []);
+      fkLookup.get(fk.tableKey)!.push({
+        name: fk.name,
+        columns: fk.cols,
+        referencedTable: fk.refTable,
+        referencedSchema: fk.refSchema,
+        referencedColumns: fk.refCols,
+        onDelete: fk.onDelete,
+        onUpdate: fk.onUpdate,
+      });
+    }
+
     // Build column lookup
     const columnLookup = new Map<string, DatabaseColumn[]>();
     for (const row of columnsRes.rows) {
@@ -174,6 +235,7 @@ export async function getPostgresSchema(
         type: row.table_type === 'VIEW' ? 'view' as const : 'table' as const,
         columns: columnLookup.get(key) ?? [],
         indexes: indexLookup.get(key) ?? [],
+        foreignKeys: fkLookup.get(key) ?? [],
         rowCount: countLookup.get(key),
       };
     });

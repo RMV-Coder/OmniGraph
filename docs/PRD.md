@@ -1,9 +1,9 @@
 # Product Requirements Document (PRD)
 
 **Project:** OmniGraph
-**Version:** 4.0.0
-**Date:** March 2026
-**Status:** Phase 2 — Complete, Phase 3 — Complete, Phase 4 — In Progress
+**Version:** 5.0.0
+**Date:** April 2026
+**Status:** Phase 2 — Complete, Phase 3 — Complete, Phase 4 — Complete, Phase 5 — In Progress
 
 ## 1. Product Overview
 
@@ -69,7 +69,13 @@ Modern full-stack monorepos have deeply nested dependency chains that span langu
 
 | # | Feature | Description | Status |
 |---|---------|-------------|--------|
-| F25 | Database Integration | Live database connectivity (PostgreSQL, MongoDB) with schema introspection, query runner, and graph visualization. Tables/collections appear as nodes connected to code files that reference them. Server-side `pg` and `mongodb` drivers with stateless per-request connections. New sidebar "Database" tab with connection manager, schema browser, and query runner. See ADR-004. | In Progress |
+| F25 | Database Integration | Live database connectivity (PostgreSQL, MongoDB) with schema introspection, query runner, and graph visualization. Tables/collections appear as nodes connected to code files that reference them. Foreign key introspection for ERD-style edges. Server-side `pg` and `mongodb` drivers with stateless per-request connections. See ADR-004. | ✅ Done |
+| F37 | Database ERD Visualization | DB tables connected via foreign key edges (ERD-style). Click an API route to highlight connected tables with glow effect. PostgreSQL FK introspection via information_schema; MongoDB heuristic ObjectId matching. Code-to-table matching via metadata, filename, and import-chain propagation. | ✅ Done |
+| F38 | Column Flow Layout | New top-to-bottom layout with 4 columns (Frontend, API/Routes, Services/Libs, Database). Auto-classifies nodes by type and file path heuristics. Directory grouping within columns. Column-aware compaction preserves X positions. | ✅ Done |
+| F39 | Method-Level Node Expansion | Click "Expand Methods" on a file node to replace it with individual function/method child nodes. Uses TypeScript AST extraction (FunctionDeclaration, ArrowFunction, ClassMethod, getters/setters). New `MethodInfo` type in `@omnigraph/types`. | ✅ Done |
+| F40 | CLI Subcommands | Multi-command CLI: `graph`, `trace`, `fetch`, `methods`, `schema`, `serve`. All commands support `--json` for AI agent consumption. `fetch` resolves `.env` tokens. `graph` supports --node, --deps, --rdeps, --filter, --edges, --stats. Backward compatible (no subcommand = serve). | ✅ Done |
+| F41 | TypeScript Path Alias Resolution | Resolves `@/*` and other tsconfig.json `paths` aliases. Project root detection with caching. Distinguishes npm packages from path aliases. | ✅ Done |
+| F42 | Enhanced Flow Tracer | Tracer follows db edges for query/join/result steps. New step types: db-query, db-join, db-result with dedicated icons and colors. Response step back to caller. | ✅ Done |
 | F26 | npm Global Install | Publish to npm via esbuild-bundled standalone package. `npm run bundle` produces a `publish/` directory with single-file CLI (12MB, includes typescript-estree), pre-built UI, and ready-to-publish package.json. Users can run `npx omnigraph --path .` without cloning. | ✅ Done |
 
 ## 8. Phase 5 — Future Enhancements
@@ -79,7 +85,9 @@ Modern full-stack monorepos have deeply nested dependency chains that span langu
 | F24 | WebSocket Tracing | Detect and visualize WebSocket connections (socket.io, ws, Django Channels, Laravel Broadcasting) between frontend and backend nodes | Not Started |
 | F34 | Next.js Cross-Network Edges | Enhance cross-network tracing to fully resolve App Router `route.ts` API handlers — match frontend `fetch()` calls to `app/api/**/route.ts` handlers | Not Started |
 | F35 | Tree-sitter Parsing | Replace regex-based Python/PHP parsers with Tree-sitter for more accurate AST analysis, enabling method-level call graphs | Not Started |
-| F36 | Method-Level Call Graphs | Extend graph granularity from file/class level to individual function/method calls within files | Not Started |
+| F36 | Method-Level Call Graphs | Extend method expansion to show inter-function call edges within and across files (requires Tree-sitter or full AST walk) | Not Started |
+| F43 | Python/PHP Method Extraction | Extend method-level extraction to Python and PHP parsers (currently TypeScript only) | Not Started |
+| F44 | CLI Live DB Schema | `omnigraph schema --live` command with direct database connection for real-time schema introspection via CLI | Not Started |
 
 ## 9. Non-Goals
 

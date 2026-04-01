@@ -129,7 +129,68 @@ function buildTrace(edge: OmniEdge, graph: OmniGraph): FlowTrace | null {
     type: 'route-handler',
   });
 
-  // 4. Walk downstream from target (dependencies of the backend handler)
+  // 4. Walk DB edges from the route handler (queries + FK joins)
+  const dbEdgesFromHandler = (edgeIndex.get(`source:${edge.target}`) ?? [])
+    .filter(e => e.id.startsWith('e-db-'));
+
+  const queriedTableIds = new Set<string>();
+
+  for (const dbEdge of dbEdgesFromHandler) {
+    const dbNode = graph.nodes.find(n => n.id === dbEdge.target);
+    if (!dbNode || visited.has(dbEdge.target)) continue;
+    visited.add(dbEdge.target);
+    queriedTableIds.add(dbEdge.target);
+
+    steps.push({
+      nodeId: dbEdge.target,
+      label: dbNode.label,
+      description: `Queries table ${dbNode.label}`,
+      edgeId: dbEdge.id,
+      type: 'db-query' as FlowStepType,
+    });
+
+    // Follow FK edges from this table (joins)
+    const fkEdges = graph.edges.filter(
+      e => e.id.startsWith('e-fk-') &&
+        (e.source === dbEdge.target || e.target === dbEdge.target),
+    );
+    for (const fk of fkEdges) {
+      const joinTargetId = fk.source === dbEdge.target ? fk.target : fk.source;
+      const joinNode = graph.nodes.find(n => n.id === joinTargetId);
+      if (!joinNode || visited.has(joinTargetId)) continue;
+      visited.add(joinTargetId);
+
+      steps.push({
+        nodeId: joinTargetId,
+        label: joinNode.label,
+        description: `Joins with ${joinNode.label} via FK`,
+        edgeId: fk.id,
+        type: 'db-join' as FlowStepType,
+      });
+    }
+  }
+
+  // 5. DB result step — return path back to the API route
+  if (queriedTableIds.size > 0) {
+    steps.push({
+      nodeId: edge.target,
+      label: targetNode.label,
+      description: `Returns query results`,
+      edgeId: null,
+      type: 'db-result' as FlowStepType,
+    });
+  }
+
+  // 6. Response step — API route sends response back to the calling component
+  steps.push({
+    nodeId: edge.source,
+    label: sourceNode.label,
+    description: `Receives API response`,
+    edgeId: edge.id,
+    type: 'caller' as FlowStepType,
+  });
+
+  // 7. Walk downstream from target for any remaining non-DB dependencies
   const downstream = walkDownstream(edge.target, graph, edgeIndex, visited, 0);
   steps.push(...downstream);
 

@@ -306,6 +306,10 @@ export default function SettingsPanel({
           <Toggle checked={edgeLabels.showQueriesLabels} onChange={(v) => onUpdateEdgeLabels({ showQueriesLabels: v })} />
         </SettingRow>
 
+        <SettingRow label="Show foreign keys">
+          <Toggle checked={edgeLabels.showFkLabels} onChange={(v) => onUpdateEdgeLabels({ showFkLabels: v })} />
+        </SettingRow>
+
         <div style={{ height: 4 }} />
 
         <SettingRow label="Label color">
@@ -325,6 +329,10 @@ export default function SettingsPanel({
 
         <SettingRow label="Animate transitions">
           <Toggle checked={graph.animateTransitions} onChange={(v) => onUpdateGraph({ animateTransitions: v })} />
+        </SettingRow>
+
+        <SettingRow label="Animate edges">
+          <Toggle checked={graph.animateEdges} onChange={(v) => onUpdateGraph({ animateEdges: v })} />
         </SettingRow>
 
         <SettingRow label="Show minimap">
