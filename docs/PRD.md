@@ -77,23 +77,65 @@ Modern full-stack monorepos have deeply nested dependency chains that span langu
 | F36 | TypeScript Path Alias Resolution | Resolves `@/*` and other tsconfig.json `paths` aliases. Project root detection with caching. Distinguishes npm packages from path aliases. | ✅ Done |
 | F37 | Enhanced Flow Tracer | Tracer follows db edges for query/join/result steps. New step types: db-query, db-join, db-result with dedicated icons and colors. Response step back to caller. | ✅ Done |
 
-## 8. Phase 5 — Future Enhancements
+## 8. Phase 5 — Parser & CLI Completeness
 
 | # | Feature | Description | Status |
 |---|---------|-------------|--------|
-| F38 | WebSocket Tracing | Detect and visualize WebSocket connections (socket.io, ws, Django Channels, Laravel Broadcasting) between frontend and backend nodes | Not Started |
-| F39 | Next.js Cross-Network Edges | Enhance cross-network tracing to fully resolve App Router `route.ts` API handlers — match frontend `fetch()` calls to `app/api/**/route.ts` handlers | Not Started |
+| F38 | WebSocket Tracing | Detect and visualize WebSocket connections (socket.io, ws, Django Channels, Laravel Broadcasting) between frontend and backend nodes. New edge type `websocket` with event labels. | Not Started |
+| F39 | Next.js Cross-Network Edges | Enhance cross-network tracing to fully resolve App Router `route.ts` API handlers — match frontend `fetch()` calls to `app/api/**/route.ts` handlers using filesystem convention routing | Not Started |
 | F40 | Tree-sitter Parsing | Replace regex-based Python/PHP parsers with Tree-sitter for more accurate AST analysis, enabling method-level call graphs | Not Started |
 | F41 | Method-Level Call Graphs | Extend method expansion to show inter-function call edges within and across files (requires Tree-sitter or full AST walk) | Not Started |
-| F42 | Python/PHP Method Extraction | Extend method-level extraction to Python and PHP parsers (currently TypeScript only) | Not Started |
-| F43 | CLI Live DB Schema | `omnigraph schema --live` command with direct database connection for real-time schema introspection via CLI | Not Started |
+| F42 | Python/PHP Method Extraction | Extend method-level extraction to Python and PHP parsers (currently TypeScript only). Regex-based detection of `def`, `class` methods for Python; PHP `function` declarations | Not Started |
+| F43 | CLI Live DB Schema | `omnigraph schema --live` command with direct database connection for real-time schema introspection via CLI. Reuses server-side pg/mongodb clients | Not Started |
 
-## 9. Non-Goals
+## 9. Phase 6 — High Impact & Visibility
+
+| # | Feature | Description | Status |
+|---|---------|-------------|--------|
+| F44 | VS Code Extension | WebView panel showing the OmniGraph visualization inside VS Code. Click a node to jump to the file. Sync selection between editor and graph. Publish to VS Code Marketplace. | Not Started |
+| F45 | Live Watch Mode | `omnigraph --watch` re-parses on file save via `fs.watch`/chokidar and hot-reloads the graph in the browser via WebSocket push. No restart needed. | Not Started |
+| F46 | GitHub Action (PR Impact) | GitHub Action that runs `omnigraph --json graph --stats` on PRs and posts a comment showing added/removed nodes, new edges, and dependency changes. Architectural drift detection. | Not Started |
+| F47 | Interactive Online Demo | Hosted playground (e.g. omnigraph.dev) with a pre-loaded sample repo so users can try OmniGraph without installing. Static site with embedded graph data. | Not Started |
+| F48 | Dark/Light Theme Toggle | System-auto, dark, and light theme modes. CSS custom properties for all colors. Theme selector in Settings tab with localStorage persistence. | Not Started |
+
+## 10. Phase 7 — Differentiators
+
+| # | Feature | Description | Status |
+|---|---------|-------------|--------|
+| F49 | AI-Powered Explanations | "Explain this" button on nodes and traces that sends the dependency chain to Claude API and returns a plain-English summary of what the code path does and why it exists. | Not Started |
+| F50 | Diff View / PR Impact Graph | Given a git diff (or two refs), highlight changed nodes and show blast radius — all transitively affected files. Answers "what could this PR break?" | Not Started |
+| F51 | REST/GraphQL Schema Detection | Parse OpenAPI/Swagger JSON/YAML specs and GraphQL `.graphql`/`.gql` schemas to create typed API endpoint nodes with request/response shapes. | Not Started |
+| F52 | Monorepo Package Boundaries | Detect npm/pip/composer workspace boundaries and render a high-level package dependency graph. Zoom out from files to packages for architectural overview. | Not Started |
+| F53 | Git Time-Travel | `omnigraph --ref HEAD~10` parses the repo at a past commit. Animated diff between two refs showing architectural evolution over time. | Not Started |
+
+## 11. Phase 8 — Community & Ecosystem
+
+| # | Feature | Description | Status |
+|---|---------|-------------|--------|
+| F54 | Plugin Marketplace | Discovery mechanism for community parsers published as npm packages (`omnigraph-plugin-go`, `omnigraph-plugin-rust`). Auto-install and register via `omnigraph plugin add <name>`. | Not Started |
+| F55 | Go Parser | `GoParser` for `.go` files — detects packages, imports, structs, interfaces, HTTP handlers (net/http, gin, echo, fiber). Resolves Go module imports. | Not Started |
+| F56 | Rust Parser | `RustParser` for `.rs` files — detects modules, `use` statements, structs, traits, impl blocks. Resolves `mod` and `crate::` imports. Detects Actix/Axum route handlers. | Not Started |
+| F57 | Java/Spring Parser | `JavaParser` for `.java` files — detects `@RestController`, `@Service`, `@Repository`, `@Component` annotations. Resolves package imports. Maven/Gradle module boundaries. | Not Started |
+| F58 | Shareable Graph Links | Export graph as a self-contained HTML file with embedded React Flow + data. Recipients can interact with the graph without installing OmniGraph. | Not Started |
+| F59 | Obsidian Plugin | Package OmniGraph's Markdown parser + React Flow UI as an Obsidian community plugin for vault-wide dependency visualization. | Not Started |
+| F60 | Embeddable Documentation Graphs | Generate static SVGs or interactive `<iframe>` embeds for docs sites. Auto-update on CI builds. "Here's our architecture" that stays current. | Not Started |
+
+## 12. Phase 9 — Quality of Life & Performance
+
+| # | Feature | Description | Status |
+|---|---------|-------------|--------|
+| F61 | Bookmarks / Saved Views | Save a filter + layout + zoom + selected nodes as a named view. One-click recall: "Auth flow", "Database layer", "API surface". localStorage + JSON export. | Not Started |
+| F62 | Node Annotations / Notes | Add sticky notes to nodes that persist across sessions (localStorage). Onboarding developers can leave breadcrumbs for teammates. | Not Started |
+| F63 | Keyboard Shortcuts | `Ctrl+K` search, arrow keys to navigate nodes, `E` expand methods, `T` trace, `C` compact, `1-6` layout presets. Customizable via settings. | Not Started |
+| F64 | Multi-Select & Batch Operations | Shift+click or drag-select multiple nodes. Batch trace, expand, hide, or highlight. "Select all of type X" context menu. | Not Started |
+| F65 | Large Graph Performance | Lazy loading and virtualization for 1000+ node graphs. Web Worker parsing. Incremental layout updates. Canvas-based rendering fallback for very large graphs. | Not Started |
+
+## 13. Non-Goals
 
 - Replacing IDE features like Go to Definition or Find References
 - Cloud deployment or SaaS hosting — OmniGraph runs locally
 
-## 10. Success Criteria
+## 14. Success Criteria
 
 - A developer can run `omnigraph --path <any-project>` and see a correct, interactive dependency graph in their browser within seconds
 - Adding a new language parser requires only implementing `IParser` and registering it — no changes to server, CLI, or UI
@@ -102,24 +144,24 @@ Modern full-stack monorepos have deeply nested dependency chains that span langu
 - Graph is navigable with multiple layout options and searchable by node name/type
 - Users can connect to live PostgreSQL and MongoDB databases and see schema entities on the graph
 
-## 11. Supported Languages & Frameworks
+## 15. Supported Languages & Frameworks
 
 | Language | Extensions | Frameworks Detected |
 |----------|-----------|-------------------|
 | TypeScript | `.ts`, `.tsx` | NestJS (`@Controller`, `@Injectable`, `@Module`), Next.js (App Router, Pages Router) |
-| JavaScript | `.js`, `.jsx` | — |
+| JavaScript | `.js`, `.jsx` | CommonJS and ES module imports |
 | Python | `.py` | FastAPI (`@router.get`, `@app.post`), Flask (`@app.route`), Django (Views, Models) |
 | PHP | `.php` | Laravel (Controllers, Models, Middleware, Routes) |
 | Markdown | `.md`, `.mdx` | Obsidian (wiki-links, embeds, frontmatter) |
 
-## 12. Supported Database Engines
+## 16. Supported Database Engines
 
 | Engine | Driver | Capabilities |
 |--------|--------|-------------|
-| PostgreSQL | `pg` (node-postgres) | Schema introspection (tables, views, columns, indexes), query execution (read-only), row count |
-| MongoDB | `mongodb` (official driver) | Schema inference via document sampling, collection listing, find queries |
+| PostgreSQL | `pg` (node-postgres) | Schema introspection (tables, views, columns, indexes, foreign keys), query execution (read-only), row count |
+| MongoDB | `mongodb` (official driver) | Schema inference via document sampling, collection listing, find queries, heuristic FK detection |
 
-## 13. Architecture Decision Records
+## 17. Architecture Decision Records
 
 | ADR | Decision |
 |-----|----------|

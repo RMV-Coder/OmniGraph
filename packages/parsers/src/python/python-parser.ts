@@ -1,5 +1,5 @@
 import { IParser } from '../IParser';
-import { OmniGraph, OmniNode, OmniEdge } from '../types';
+import { OmniGraph, OmniNode, OmniEdge, MethodInfo } from '../types';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -34,6 +34,8 @@ const PATTERNS = {
   classDefSimple: /^class\s+(\w+)\s*:/,
   /** def foo(): — captures function name */
   funcDef: /^(?:async\s+)?def\s+(\w+)\s*\(/,
+  /** def foo(param1, param2: str): — captures function name and params */
+  funcDefFull: /^(?:async\s+)?def\s+(\w+)\s*\(([^)]*)\)/,
 };
 
 /** Django base classes that indicate a view */
@@ -113,7 +115,8 @@ export class PythonParser implements IParser {
     const fileId = filePath.replace(/\\/g, '/');
     const label = path.basename(filePath, '.py');
     const edges: OmniEdge[] = [];
-    const lines = source.split('\n').map(l => l.trimStart());
+    const rawLines = source.split('\n');
+    const lines = rawLines.map(l => l.trimStart());
 
     let nodeType = 'python-file';
     const routes: string[] = [];
@@ -121,10 +124,27 @@ export class PythonParser implements IParser {
     const classes: string[] = [];
     const functions: string[] = [];
     const imports: string[] = [];
+    const methodInfos: MethodInfo[] = [];
 
-    for (const line of lines) {
+    // Track whether we are inside a class body (for method vs function distinction)
+    let insideClass = false;
+    let classIndent = -1;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const rawLine = rawLines[i];
+      const currentIndent = rawLine.length - rawLine.trimStart().length;
+
       // Skip comments and blank lines
       if (line.startsWith('#') || line === '') continue;
+
+      // Track class scope by indentation: if we were inside a class and
+      // encounter a non-empty line at the same or lesser indentation as the
+      // class definition, we have left the class body.
+      if (insideClass && currentIndent <= classIndent) {
+        insideClass = false;
+        classIndent = -1;
+      }
 
       // --- Import detection ---
       const fromMatch = line.match(PATTERNS.fromImport);
@@ -191,6 +211,8 @@ export class PythonParser implements IParser {
       if (classMatch) {
         const [, className, bases] = classMatch;
         classes.push(className);
+        insideClass = true;
+        classIndent = currentIndent;
         const baseNames = bases.split(',').map(b => b.trim());
 
         // Django view detection
@@ -215,13 +237,65 @@ export class PythonParser implements IParser {
       const classSimpleMatch = line.match(PATTERNS.classDefSimple);
       if (classSimpleMatch) {
         classes.push(classSimpleMatch[1]);
+        insideClass = true;
+        classIndent = currentIndent;
         continue;
       }
 
-      // --- Function detection ---
+      // --- Function / method detection ---
+      const funcFullMatch = line.match(PATTERNS.funcDefFull);
       const funcMatch = line.match(PATTERNS.funcDef);
       if (funcMatch) {
-        functions.push(funcMatch[1]);
+        const funcName = funcMatch[1];
+        functions.push(funcName);
+
+        // Extract parameters
+        const params: string[] = [];
+        if (funcFullMatch) {
+          const rawParams = funcFullMatch[2];
+          if (rawParams.trim()) {
+            for (const p of rawParams.split(',')) {
+              const paramName = p.trim()
+                .replace(/\s*[:=].*$/, '')   // strip type annotations and defaults
+                .replace(/^\*{1,2}/, '');     // strip * and ** prefixes
+              if (paramName && paramName !== 'self' && paramName !== 'cls') {
+                params.push(paramName);
+              }
+            }
+          }
+        }
+
+        // Estimate endLine: scan forward for next def/class at same or lesser indent, or EOF
+        const defIndent = currentIndent;
+        let endLine = i; // default to same line
+        for (let j = i + 1; j < rawLines.length; j++) {
+          const nextRaw = rawLines[j];
+          const nextTrimmed = nextRaw.trimStart();
+          if (nextTrimmed === '' || nextTrimmed.startsWith('#')) continue;
+          const nextIndent = nextRaw.length - nextTrimmed.length;
+          if (nextIndent <= defIndent && (nextTrimmed.match(/^(?:async\s+)?def\s/) || nextTrimmed.match(/^class\s/))) {
+            // endLine is the last content line before this new def/class
+            endLine = j - 1;
+            // Walk back past blank/comment lines
+            while (endLine > i && rawLines[endLine].trim() === '') {
+              endLine--;
+            }
+            break;
+          }
+          endLine = j;
+        }
+
+        const kind: MethodInfo['kind'] = insideClass ? 'method' : 'function';
+        const exported = !funcName.startsWith('_');
+
+        methodInfos.push({
+          name: funcName,
+          line: i + 1,        // 1-based
+          endLine: endLine + 1, // 1-based
+          kind,
+          exported,
+          params,
+        });
         continue;
       }
     }
@@ -237,6 +311,9 @@ export class PythonParser implements IParser {
     if (functions.length > 0) metadata.functions = functions.slice(0, 10).join(', ');
 
     const node: OmniNode = { id: fileId, type: nodeType, label, metadata };
+    if (methodInfos.length > 0) {
+      node.methods = methodInfos;
+    }
     return { nodes: [node], edges };
   }
 }

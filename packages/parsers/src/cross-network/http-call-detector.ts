@@ -85,6 +85,43 @@ const TS_JS_PATTERNS: CallPattern[] = [
     methodGroup: 1,
     urlGroup: 2,
   },
+  // fetch(`/api/users/${id}`) — template literal with interpolations (must contain ${})
+  {
+    pattern: /\bfetch\s*\(\s*`([^`]*\$\{[^`]*)`/g,
+    method: 'GET',
+    urlGroup: 1,
+  },
+  // fetch(`/api/users/${id}`, { method: 'POST' }) — template literal with method override
+  {
+    pattern: /\bfetch\s*\(\s*`([^`]*\$\{[^`]*)`\s*,\s*\{[^}]*method\s*:\s*['"`](\w+)['"`]/g,
+    method: null,
+    urlGroup: 1,
+    methodGroup: 2,
+  },
+  // fetch('/api/users/' + id) — string concatenation
+  {
+    pattern: /\bfetch\s*\(\s*['"]([^'"]+)['"]\s*\+/g,
+    method: 'GET',
+    urlGroup: 1,
+  },
+  // Next.js revalidatePath('/api/users')
+  {
+    pattern: /\brevalidatePath\s*\(\s*['"`]([^'"`]+)['"`]/g,
+    method: '*',
+    urlGroup: 1,
+  },
+  // Next.js revalidateTag('users')
+  {
+    pattern: /\brevalidateTag\s*\(\s*['"`]([^'"`]+)['"`]/g,
+    method: '*',
+    urlGroup: 1,
+  },
+  // Next.js redirect('/somewhere')
+  {
+    pattern: /\bredirect\s*\(\s*['"`]([^'"`]+)['"`]/g,
+    method: 'GET',
+    urlGroup: 1,
+  },
 ];
 
 const PYTHON_PATTERNS: CallPattern[] = [
@@ -170,6 +207,20 @@ export function normalizeUrl(url: string): string {
 
   // Strip template literal expressions at the start (${baseUrl}, ${API_URL}, etc.)
   normalized = normalized.replace(/^\$\{[^}]+\}/, '');
+
+  // Replace remaining ${...} interpolations with :param wildcard segments
+  // e.g. /api/users/${id} → /api/users/:id, /api/posts/${postId}/comments → /api/posts/:postId/comments
+  normalized = normalized.replace(/\$\{([^}]+)\}/g, (_match, expr) => {
+    // Use the variable name as the param name (strip any property access / method calls)
+    const paramName = expr.replace(/[^a-zA-Z0-9_]/g, '').slice(0, 20) || 'param';
+    return ':' + paramName;
+  });
+
+  // If the URL ends with a trailing slash from string concatenation (e.g. '/api/users/'),
+  // append :param since the concatenated part is a dynamic segment
+  if (normalized.endsWith('/') && normalized !== '/') {
+    normalized = normalized + ':param';
+  }
 
   // If nothing remains after stripping, return original
   if (!normalized || normalized === '/') return url.toLowerCase();

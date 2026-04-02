@@ -1,5 +1,5 @@
 import { IParser } from '../IParser';
-import { OmniGraph, OmniNode, OmniEdge } from '../types';
+import { OmniGraph, OmniNode, OmniEdge, MethodInfo } from '../types';
 import * as path from 'path';
 import * as fs from 'fs';
 
@@ -39,6 +39,10 @@ const PATTERNS = {
   laravelRoute: /Route::(get|post|put|delete|patch|options|any|match|resource|apiResource)\s*\(\s*['"]([^'"]*)['"]/,
   /** public function foo() */
   methodDef: /^(?:public|protected|private)\s+(?:static\s+)?function\s+(\w+)\s*\(/,
+  /** public function foo(string $a, int $b = 0) — captures visibility, name, params */
+  methodDefFull: /^(public|protected|private)\s+(?:static\s+)?function\s+(\w+)\s*\(([^)]*)\)/,
+  /** function foo($a, $b) — standalone (no visibility) */
+  funcDefFull: /^function\s+(\w+)\s*\(([^)]*)\)/,
 };
 
 /** Laravel base classes that indicate controller */
@@ -121,7 +125,8 @@ export class PhpParser implements IParser {
     const fileId = filePath.replace(/\\/g, '/');
     const label = path.basename(filePath, '.php');
     const edges: OmniEdge[] = [];
-    const lines = source.split('\n').map(l => l.trim());
+    const rawLines = source.split('\n');
+    const lines = rawLines.map(l => l.trim());
 
     let nodeType = 'php-file';
     let namespace = '';
@@ -130,7 +135,9 @@ export class PhpParser implements IParser {
     const classes: string[] = [];
     const methods: string[] = [];
     const useStatements: string[] = [];
+    const methodInfos: MethodInfo[] = [];
     let isRouteFile = false;
+    let insideClass = false;
 
     // Detect if this is a Laravel route file
     const normalizedPath = filePath.replace(/\\/g, '/');
@@ -138,7 +145,8 @@ export class PhpParser implements IParser {
       isRouteFile = true;
     }
 
-    for (const line of lines) {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
       // Skip comments and empty lines
       if (line.startsWith('//') || line.startsWith('*') || line.startsWith('/*') || line === '' || line === '<?php') {
         continue;
@@ -209,6 +217,7 @@ export class PhpParser implements IParser {
       if (classMatch) {
         const [, className, extendsClass] = classMatch;
         classes.push(className);
+        insideClass = true;
 
         if (extendsClass) {
           const baseName = extendsClass.split('\\').pop() ?? extendsClass;
@@ -255,10 +264,68 @@ export class PhpParser implements IParser {
         continue;
       }
 
-      // --- Method detection ---
+      // --- Method / function detection with MethodInfo ---
+      const methodFullMatch = line.match(PATTERNS.methodDefFull);
       const methodMatch = line.match(PATTERNS.methodDef);
-      if (methodMatch) {
-        methods.push(methodMatch[1]);
+      const funcFullMatch = !methodMatch ? line.match(PATTERNS.funcDefFull) : null;
+
+      if (methodMatch || funcFullMatch) {
+        let funcName: string;
+        let params: string[] = [];
+        let exported = true;
+
+        if (methodFullMatch) {
+          const [, visibility, name, rawParams] = methodFullMatch;
+          funcName = name;
+          exported = visibility === 'public';
+          if (rawParams.trim()) {
+            for (const p of rawParams.split(',')) {
+              // Extract $variable name, strip type hints and defaults
+              const varMatch = p.match(/\$(\w+)/);
+              if (varMatch) params.push('$' + varMatch[1]);
+            }
+          }
+        } else if (funcFullMatch) {
+          funcName = funcFullMatch[1];
+          const rawParams = funcFullMatch[2];
+          if (rawParams.trim()) {
+            for (const p of rawParams.split(',')) {
+              const varMatch = p.match(/\$(\w+)/);
+              if (varMatch) params.push('$' + varMatch[1]);
+            }
+          }
+        } else {
+          funcName = methodMatch![1];
+        }
+
+        methods.push(funcName);
+
+        // Estimate endLine by scanning for next function/class or closing brace pattern
+        let endLine = i;
+        let braceDepth = 0;
+        let foundOpen = false;
+        for (let j = i; j < rawLines.length; j++) {
+          const rawLine = rawLines[j];
+          for (const ch of rawLine) {
+            if (ch === '{') { braceDepth++; foundOpen = true; }
+            if (ch === '}') braceDepth--;
+          }
+          if (foundOpen && braceDepth <= 0) {
+            endLine = j;
+            break;
+          }
+          endLine = j;
+        }
+
+        const kind: MethodInfo['kind'] = insideClass ? 'method' : 'function';
+        methodInfos.push({
+          name: funcName,
+          line: i + 1,
+          endLine: endLine + 1,
+          kind,
+          exported,
+          params,
+        });
         continue;
       }
     }
@@ -274,6 +341,9 @@ export class PhpParser implements IParser {
     if (methods.length > 0) metadata.methods = methods.slice(0, 10).join(', ');
 
     const node: OmniNode = { id: fileId, type: nodeType, label, metadata };
+    if (methodInfos.length > 0) {
+      node.methods = methodInfos;
+    }
     return { nodes: [node], edges };
   }
 }

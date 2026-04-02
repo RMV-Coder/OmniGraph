@@ -3,6 +3,202 @@ import path from 'path';
 import fs from 'fs';
 import { loadGraph } from '../lib/graph-loader';
 import { printOutput, printError, bold, dim, green, cyan, yellow } from '../lib/format';
+import type {
+  DatabaseConnectionConfig,
+  DatabaseSchema,
+  DatabaseTable,
+} from '@omnigraph/types';
+
+/** Parse a connection string into a DatabaseConnectionConfig */
+function parseConnectionString(
+  connStr: string,
+  engine: 'postgresql' | 'mongodb',
+): DatabaseConnectionConfig {
+  try {
+    const url = new URL(connStr);
+    return {
+      id: 'cli-live',
+      name: 'CLI Live Connection',
+      engine,
+      host: url.hostname || 'localhost',
+      port: Number(url.port) || (engine === 'mongodb' ? 27017 : 5432),
+      database: url.pathname.replace(/^\//, '') || '',
+      username: decodeURIComponent(url.username || ''),
+      password: decodeURIComponent(url.password || ''),
+      ssl: url.searchParams.get('ssl') === 'true' || url.searchParams.get('sslmode') === 'require',
+    };
+  } catch {
+    throw new Error(`Invalid connection string: ${connStr}`);
+  }
+}
+
+/** Build a DatabaseConnectionConfig from CLI options */
+function buildConnectionConfig(opts: Record<string, string | undefined>): DatabaseConnectionConfig {
+  const engine = (opts.engine ?? 'postgresql') as 'postgresql' | 'mongodb';
+
+  if (opts.connectionString) {
+    return parseConnectionString(opts.connectionString, engine);
+  }
+
+  return {
+    id: 'cli-live',
+    name: 'CLI Live Connection',
+    engine,
+    host: opts.host ?? 'localhost',
+    port: Number(opts.dbPort) || (engine === 'mongodb' ? 27017 : 5432),
+    database: opts.database ?? '',
+    username: opts.user ?? '',
+    password: opts.password ?? '',
+    ssl: false,
+  };
+}
+
+/** Display schema from a live database connection */
+async function liveSchema(
+  config: DatabaseConnectionConfig,
+  opts: Record<string, string | boolean | undefined>,
+  fmtOpts: { json: boolean },
+): Promise<void> {
+  let schema: DatabaseSchema;
+
+  try {
+    if (config.engine === 'postgresql') {
+      // Dynamic import — path resolved through package exports
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { getPostgresSchema } = require(require.resolve('@omnigraph/server').replace(/dist[/\\]index\.js$/, 'dist/db/postgres-client.js'));
+      schema = await getPostgresSchema(config);
+    } else if (config.engine === 'mongodb') {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { getMongoSchema } = require(require.resolve('@omnigraph/server').replace(/dist[/\\]index\.js$/, 'dist/db/mongodb-client.js'));
+      schema = await getMongoSchema(config);
+    } else {
+      printError(`Unsupported engine: ${config.engine}. Use 'postgresql' or 'mongodb'.`, fmtOpts);
+      process.exit(1);
+    }
+  } catch (err) {
+    printError(`Failed to connect: ${err instanceof Error ? err.message : String(err)}`, fmtOpts);
+    process.exit(1);
+  }
+
+  // Single table detail
+  if (opts.table) {
+    const tableName = opts.table as string;
+    const table = schema.tables.find(t => t.name === tableName);
+    if (!table) {
+      printError(`Table not found: ${tableName}`, fmtOpts);
+      process.exit(1);
+    }
+    if (fmtOpts.json) {
+      printOutput(table, fmtOpts);
+    } else {
+      printLiveTable(table);
+    }
+    return;
+  }
+
+  // Show columns for a specific table
+  if (opts.columns) {
+    const tableName = opts.columns as string;
+    const table = schema.tables.find(t => t.name === tableName);
+    if (!table) {
+      printError(`Table not found: ${tableName}`, fmtOpts);
+      process.exit(1);
+    }
+    if (fmtOpts.json) {
+      printOutput(table.columns, fmtOpts);
+    } else {
+      console.log(`\n${bold('Columns for')} ${green(table.name)} (${table.columns.length}):\n`);
+      for (const col of table.columns) {
+        const pk = col.isPrimaryKey ? ` ${yellow('PK')}` : '';
+        const nullable = col.nullable ? dim(' NULL') : '';
+        const def = col.defaultValue ? dim(` default=${col.defaultValue}`) : '';
+        console.log(`  ${cyan(col.name)} ${dim(col.type)}${pk}${nullable}${def}`);
+      }
+      console.log();
+    }
+    return;
+  }
+
+  // Show FK relationships
+  if (opts.fk) {
+    const allFks = schema.tables.flatMap(t =>
+      t.foreignKeys.map(fk => ({
+        table: t.name,
+        column: fk.columns.join(', '),
+        references: `${fk.referencedTable}(${fk.referencedColumns.join(', ')})`,
+        name: fk.name,
+      })),
+    );
+    if (fmtOpts.json) {
+      printOutput(allFks, fmtOpts);
+    } else if (allFks.length === 0) {
+      console.log(dim('No foreign key relationships found.'));
+    } else {
+      console.log(`\n${bold('Foreign Key Relationships')} (${allFks.length}):\n`);
+      for (const fk of allFks) {
+        console.log(`  ${green(fk.table)}.${cyan(fk.column)} ${dim('→')} ${green(fk.references)}`);
+      }
+      console.log();
+    }
+    return;
+  }
+
+  // Default: list all tables
+  if (fmtOpts.json) {
+    printOutput(schema.tables.map(t => ({
+      name: t.name,
+      type: t.type,
+      columns: t.columns.length,
+      indexes: t.indexes.length,
+      foreignKeys: t.foreignKeys.length,
+      rowCount: t.rowCount,
+    })), fmtOpts);
+  } else {
+    console.log(`\n${bold(`${schema.engine} — ${schema.database}`)} (${schema.tables.length} tables):\n`);
+    const rows = schema.tables.map(t => ({
+      name: t.name,
+      type: t.type ?? 'table',
+      columns: t.columns.length,
+      rows: t.rowCount ?? '?',
+      FKs: t.foreignKeys.length,
+    }));
+    printOutput(rows, { json: false });
+    console.log();
+  }
+}
+
+/** Pretty-print a single live table */
+function printLiveTable(table: DatabaseTable): void {
+  console.log(`\n${bold('TABLE:')} ${green(table.name)}`);
+  if (table.schema) console.log(`${dim('Schema:')} ${table.schema}`);
+  if (table.type) console.log(`${dim('Type:')} ${table.type}`);
+  if (table.rowCount !== undefined) console.log(`${dim('Rows:')} ~${table.rowCount}`);
+
+  if (table.columns.length > 0) {
+    console.log(`\n${bold('Columns')} (${table.columns.length}):`);
+    for (const col of table.columns) {
+      const pk = col.isPrimaryKey ? ` ${yellow('PK')}` : '';
+      const nullable = col.nullable ? dim(' NULL') : '';
+      console.log(`  ${cyan(col.name)} ${dim(col.type)}${pk}${nullable}`);
+    }
+  }
+
+  if (table.indexes.length > 0) {
+    console.log(`\n${bold('Indexes')} (${table.indexes.length}):`);
+    for (const idx of table.indexes) {
+      const uniq = idx.unique ? yellow(' UNIQUE') : '';
+      console.log(`  ${idx.name} (${idx.columns.join(', ')})${uniq}`);
+    }
+  }
+
+  if (table.foreignKeys.length > 0) {
+    console.log(`\n${bold('Foreign Keys')} (${table.foreignKeys.length}):`);
+    for (const fk of table.foreignKeys) {
+      console.log(`  ${cyan(fk.columns.join(', '))} ${dim('→')} ${green(fk.referencedTable)}(${fk.referencedColumns.join(', ')})`);
+    }
+  }
+  console.log();
+}
 
 export const schemaCommand = new Command('schema')
   .description('Inspect database schema from graph analysis or live connection')
@@ -10,12 +206,31 @@ export const schemaCommand = new Command('schema')
   .option('--tables', 'List all detected database tables')
   .option('--fk', 'Show foreign key relationships')
   .option('--columns <table>', 'Show columns for a table')
-  .action((opts, cmd) => {
+  .option('--live', 'Connect to a live database instead of using the graph')
+  .option('--engine <engine>', 'Database engine: postgresql or mongodb (default: postgresql)')
+  .option('--host <host>', 'Database host (default: localhost)')
+  .option('--db-port <port>', 'Database port (default: 5432 for pg, 27017 for mongo)')
+  .option('--database <name>', 'Database name')
+  .option('--user <username>', 'Database username')
+  .option('--password <password>', 'Database password')
+  .option('--connection-string <uri>', 'Full connection URI (overrides host/port/user/password)')
+  .action(async (opts, cmd) => {
     const targetPath = cmd.parent?.opts().path ?? '.';
     const json = cmd.parent?.opts().json ?? false;
     const fmtOpts = { json };
 
-    // Load the graph to find db:// nodes
+    // Live mode: connect directly to a database
+    if (opts.live) {
+      if (!opts.database && !opts.connectionString) {
+        printError('--live requires --database <name> or --connection-string <uri>', fmtOpts);
+        process.exit(1);
+      }
+      const config = buildConnectionConfig(opts);
+      await liveSchema(config, opts, fmtOpts);
+      return;
+    }
+
+    // Static mode: load graph from filesystem
     let graph;
     try {
       graph = loadGraph(targetPath, json);

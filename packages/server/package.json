@@ -2,6 +2,11 @@
   "name": "@omnigraph/server",
   "version": "1.0.0",
   "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./db/postgres-client": "./dist/db/postgres-client.js",
+    "./db/mongodb-client": "./dist/db/mongodb-client.js"
+  },
   "scripts": {
     "build": "tsc"
   },

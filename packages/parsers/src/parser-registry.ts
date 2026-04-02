@@ -4,8 +4,8 @@ import { PythonParser } from './python/python-parser';
 import { PhpParser } from './php/php-parser';
 import { MarkdownParser } from './markdown/markdown-parser';
 import { OmniGraph, OmniNode, OmniEdge } from './types';
-import { detectHttpCalls, matchRoutes } from './cross-network';
-import type { HttpCall } from './cross-network';
+import { detectHttpCalls, matchRoutes, detectWebSocketEndpoints, matchWebSocketEndpoints } from './cross-network';
+import type { HttpCall, WebSocketEndpoint } from './cross-network';
 import * as fs from 'fs';
 import * as path from 'path';
 import ignore, { Ignore } from 'ignore';
@@ -91,6 +91,23 @@ export function parseDirectory(dirPath: string): OmniGraph {
   if (httpCallsByFile.size > 0) {
     const crossNetwork = matchRoutes(nodes, httpCallsByFile);
     edges.push(...crossNetwork.edges);
+  }
+
+  // ─── WebSocket Tracing (F38) ──────────────────────────────────────
+  // Scan all source files for WebSocket client/server patterns and
+  // event emitters/listeners, then match them to create WS edges.
+  const wsEndpointsByFile = new Map<string, WebSocketEndpoint[]>();
+
+  for (const [fileId, { filePath, source }] of sourceByFileId) {
+    const endpoints = detectWebSocketEndpoints(filePath, source);
+    if (endpoints.length > 0) {
+      wsEndpointsByFile.set(fileId, endpoints);
+    }
+  }
+
+  if (wsEndpointsByFile.size > 0) {
+    const wsEdges = matchWebSocketEndpoints(wsEndpointsByFile);
+    edges.push(...wsEdges);
   }
 
   // Filter out dangling edges where source or target node doesn't exist
