@@ -48,9 +48,9 @@ Modern full-stack monorepos have deeply nested dependency chains that span langu
 | F12 | Cross-Network Tracing | Heuristic-based linking of frontend HTTP client calls (fetch, axios, httpClient, requests, Http::, Guzzle) to backend route handlers. Supports TS/JS, Python, and PHP client patterns. Matches via exact path, suffix matching (controller prefixes), and parameterized routes (:id, {id}). Cross-network edges rendered as dashed orange lines with method+path labels. | ✅ Done |
 | F13 | Code Snippets in Inspector | Show raw source code of the selected node in the inspector panel with syntax highlighting (keywords, strings, decorators, comments) via new `/api/file` endpoint with path traversal protection | ✅ Done |
 | F14 | Search & Filter | Search nodes by name, filter by type with color-coded toggle chips, highlight matching nodes and dim non-matches | ✅ Done |
-| F15 | Layout Presets | 5 layout algorithms: Directory (grouped by folder), Hierarchical (dagre TB), Force-Directed (live d3-force simulation with drag physics), Grid, Mind Map (dagre LR/RL) | ✅ Done |
+| F15 | Layout Presets | 6 layout algorithms: Directory (grouped by folder), Hierarchical (dagre TB), Column Flow (4-column auto-classified), Force-Directed (live d3-force simulation with drag physics), Grid, Mind Map (dagre LR/RL) | ✅ Done |
 | F16 | Export | Export graph as PNG (2x), SVG, JSON, or animated GIF (1s 30fps with progress overlay) via export dropdown using `html-to-image` and `gif.js` | ✅ Done |
-| F17 | npm Global Install | Publish to npm so users can run `npx omnigraph --path .` without cloning | Not Started |
+| ~~F17~~ | ~~npm Global Install~~ | Superseded by F26 (Phase 4) | — |
 | F18 | Sidebar Controls | Right sidebar drawer with layout selector, search/filter, and node inspector below a divider — keeps the canvas clean | ✅ Done |
 | F19 | Live Force Simulation | Force-directed layout uses a live d3-force simulation with drag-to-push physics — nearby nodes react dynamically when dragging | ✅ Done |
 | F20 | Dangling Edge Filtering | Edges whose source or target node doesn't exist are automatically filtered out | ✅ Done |

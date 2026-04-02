@@ -125,6 +125,11 @@ async function main() {
       'wiki-links',
       'react-flow',
       'gif-export',
+      'erd',
+      'foreign-keys',
+      'cli',
+      'method-extraction',
+      'tsconfig-paths',
     ],
     repository: {
       type: 'git',
