@@ -28,6 +28,9 @@ export const NODE_COLORS: Record<string, string> = {
   'db-view': '#8e44ad',          // Purple for views
   // Method-level nodes
   'method-node': '#5a5a8a',
+  // API Schema
+  'openapi-spec': '#85ea2d',        // Swagger green
+  'graphql-schema': '#e10098',      // GraphQL pink
   // PHP
   'php-file': '#777bb4',
   'php-laravel-controller': '#ff2d20',

@@ -3,6 +3,7 @@ import { TypeScriptParser } from './typescript/typescript-parser';
 import { PythonParser } from './python/python-parser';
 import { PhpParser } from './php/php-parser';
 import { MarkdownParser } from './markdown/markdown-parser';
+import { SchemaParser } from './schema/schema-parser';
 import { OmniGraph, OmniNode, OmniEdge } from './types';
 import { detectHttpCalls, matchRoutes, detectWebSocketEndpoints, matchWebSocketEndpoints } from './cross-network';
 import type { HttpCall, WebSocketEndpoint } from './cross-network';
@@ -14,7 +15,9 @@ const pythonParser = new PythonParser();
 const phpParser = new PhpParser();
 const markdownParser = new MarkdownParser();
 
-const parsers: IParser[] = [new TypeScriptParser(), pythonParser, phpParser, markdownParser];
+const schemaParser = new SchemaParser();
+
+const parsers: IParser[] = [new TypeScriptParser(), pythonParser, phpParser, markdownParser, schemaParser];
 
 /** Always skip these directories regardless of .gitignore */
 const ALWAYS_SKIP = new Set(['node_modules', '.git', 'dist', '.next', 'build']);

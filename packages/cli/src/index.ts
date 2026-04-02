@@ -5,6 +5,7 @@ import { traceCommand } from './commands/trace';
 import { fetchCommand } from './commands/fetch';
 import { methodsCommand } from './commands/methods';
 import { schemaCommand } from './commands/schema';
+import { diffCommand } from './commands/diff';
 import { serveCommand } from './commands/serve';
 
 const program = new Command();
@@ -23,6 +24,7 @@ program.addCommand(traceCommand);
 program.addCommand(fetchCommand);
 program.addCommand(methodsCommand);
 program.addCommand(schemaCommand);
+program.addCommand(diffCommand);
 program.addCommand(serveCommand);
 
 // Default action: if no subcommand given, start the visualization server

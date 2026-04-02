@@ -103,8 +103,8 @@ Modern full-stack monorepos have deeply nested dependency chains that span langu
 | # | Feature | Description | Status |
 |---|---------|-------------|--------|
 | F49 | AI-Powered Explanations | "Explain this" button on nodes and traces that sends the dependency chain to Claude API and returns a plain-English summary of what the code path does and why it exists. | Not Started |
-| F50 | Diff View / PR Impact Graph | Given a git diff (or two refs), highlight changed nodes and show blast radius — all transitively affected files. Answers "what could this PR break?" | Not Started |
-| F51 | REST/GraphQL Schema Detection | Parse OpenAPI/Swagger JSON/YAML specs and GraphQL `.graphql`/`.gql` schemas to create typed API endpoint nodes with request/response shapes. | Not Started |
+| F50 | Diff View / PR Impact Graph | `omnigraph diff` — given a git diff (or two refs), maps changed files to graph nodes and computes blast radius. Supports `--base`, `--head`, `--uncommitted`, `--depth`, `--blast-only`. | Done |
+| F51 | REST/GraphQL Schema Detection | `SchemaParser` detects OpenAPI/Swagger JSON/YAML specs and GraphQL `.graphql`/`.gql` schema files. Extracts endpoints as MethodInfo and schema models. | Done |
 | F52 | Monorepo Package Boundaries | Detect npm/pip/composer workspace boundaries and render a high-level package dependency graph. Zoom out from files to packages for architectural overview. | Not Started |
 | F53 | Git Time-Travel | `omnigraph --ref HEAD~10` parses the repo at a past commit. Animated diff between two refs showing architectural evolution over time. | Not Started |
 

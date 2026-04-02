@@ -41,6 +41,8 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   'db-collection': 'DB Collection',
   'db-view': 'DB View',
   'method-node': 'Method',
+  'openapi-spec': 'OpenAPI Spec',
+  'graphql-schema': 'GraphQL Schema',
 };
 
 const selectStyle: React.CSSProperties = {
