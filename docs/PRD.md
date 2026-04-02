@@ -93,10 +93,10 @@ Modern full-stack monorepos have deeply nested dependency chains that span langu
 | # | Feature | Description | Status |
 |---|---------|-------------|--------|
 | F44 | VS Code Extension | WebView panel showing the OmniGraph visualization inside VS Code. Click a node to jump to the file. Sync selection between editor and graph. Publish to VS Code Marketplace. | Not Started |
-| F45 | Live Watch Mode | `omnigraph --watch` re-parses on file save via `fs.watch`/chokidar and hot-reloads the graph in the browser via WebSocket push. No restart needed. | Not Started |
+| F45 | Live Watch Mode | `omnigraph --watch` re-parses on file save via `fs.watch` and hot-reloads the graph in the browser via SSE push. No restart needed. | Done |
 | F46 | GitHub Action (PR Impact) | GitHub Action that runs `omnigraph --json graph --stats` on PRs and posts a comment showing added/removed nodes, new edges, and dependency changes. Architectural drift detection. | Not Started |
 | F47 | Interactive Online Demo | Hosted playground (e.g. omnigraph.dev) with a pre-loaded sample repo so users can try OmniGraph without installing. Static site with embedded graph data. | Not Started |
-| F48 | Dark/Light Theme Toggle | System-auto, dark, and light theme modes. CSS custom properties for all colors. Theme selector in Settings tab with localStorage persistence. | Not Started |
+| F48 | Dark/Light Theme Toggle | System-auto, dark, and light theme modes. CSS custom properties for all colors. Theme selector in Settings tab with localStorage persistence. | Done |
 
 ## 10. Phase 7 — Differentiators
 

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { AppSettings, EdgeLabelSettings, GraphSettings, SearchSettings } from '../../hooks/useSettings';
+import type { ThemeMode } from '../../hooks/useTheme';
 
 // ─── Shared Styles ───────────────────────────────────────────────────
 
@@ -16,7 +17,7 @@ const sectionHeaderStyle: React.CSSProperties = {
 
 const sectionTitleStyle: React.CSSProperties = {
   fontSize: 11,
-  color: '#999',
+  color: 'var(--text-muted)',
   textTransform: 'uppercase',
   letterSpacing: '0.5px',
   fontWeight: 700,
@@ -24,8 +25,8 @@ const sectionTitleStyle: React.CSSProperties = {
 
 const resetBtnStyle: React.CSSProperties = {
   background: 'none',
-  border: '1px solid #444',
-  color: '#888',
+  border: '1px solid var(--border)',
+  color: 'var(--text-muted)',
   fontSize: 9,
   padding: '2px 8px',
   borderRadius: 3,
@@ -42,19 +43,19 @@ const rowStyle: React.CSSProperties = {
 
 const labelTextStyle: React.CSSProperties = {
   fontSize: 12,
-  color: '#ccc',
+  color: 'var(--text-secondary)',
 };
 
 const dividerStyle: React.CSSProperties = {
   height: 1,
-  background: '#333',
+  background: 'var(--divider)',
   margin: '12px 0',
 };
 
 const selectStyle: React.CSSProperties = {
-  background: '#1a1a2e',
-  color: '#e0e0e0',
-  border: '1px solid #444',
+  background: 'var(--input-bg)',
+  color: 'var(--text)',
+  border: '1px solid var(--border)',
   borderRadius: 4,
   padding: '3px 6px',
   fontSize: 11,
@@ -73,7 +74,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
         height: 18,
         borderRadius: 9,
         border: 'none',
-        background: checked ? '#4a90e8' : '#444',
+        background: checked ? 'var(--accent)' : 'var(--toggle-off)',
         position: 'relative',
         cursor: 'pointer',
         transition: 'background 0.2s',
@@ -122,7 +123,7 @@ function ColorPicker({ color, onChange }: { color: string; onChange: (c: string)
           width: 22,
           height: 22,
           borderRadius: 4,
-          border: '2px solid #555',
+          border: '2px solid var(--border-light)',
           background: color,
           cursor: 'pointer',
           padding: 0,
@@ -130,7 +131,7 @@ function ColorPicker({ color, onChange }: { color: string; onChange: (c: string)
         }}
         title={color}
       />
-      <span style={{ fontSize: 10, color: '#888', fontFamily: 'monospace' }}>{color}</span>
+      <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{color}</span>
       {open && (
         <div
           style={{
@@ -138,11 +139,11 @@ function ColorPicker({ color, onChange }: { color: string; onChange: (c: string)
             top: 28,
             right: 0,
             zIndex: 100,
-            background: '#1a1a2e',
-            border: '1px solid #444',
+            background: 'var(--bg-panel)',
+            border: '1px solid var(--border)',
             borderRadius: 6,
             padding: 8,
-            boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+            boxShadow: '0 4px 16px var(--shadow)',
           }}
         >
           <input
@@ -197,9 +198,9 @@ function NumberInput({
         max={max}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        style={{ width: 60, accentColor: '#4a90e8', cursor: 'pointer' }}
+        style={{ width: 60, accentColor: 'var(--accent)', cursor: 'pointer' }}
       />
-      <span style={{ fontSize: 10, color: '#e0e0e0', fontWeight: 600, minWidth: 24, textAlign: 'right' }}>
+      <span style={{ fontSize: 10, color: 'var(--text)', fontWeight: 600, minWidth: 24, textAlign: 'right' }}>
         {value}{suffix ?? ''}
       </span>
     </div>
@@ -216,12 +217,12 @@ function SectionHeader({ title, onReset }: { title: string; onReset: () => void 
         onClick={onReset}
         style={resetBtnStyle}
         onMouseEnter={(e) => {
-          e.currentTarget.style.borderColor = '#e8534a';
-          e.currentTarget.style.color = '#e8534a';
+          e.currentTarget.style.borderColor = 'var(--danger)';
+          e.currentTarget.style.color = 'var(--danger)';
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.borderColor = '#444';
-          e.currentTarget.style.color = '#888';
+          e.currentTarget.style.borderColor = '';
+          e.currentTarget.style.color = '';
         }}
       >
         Reset
@@ -250,18 +251,21 @@ interface Props {
   onResetGraph: () => void;
   onResetSearch: () => void;
   onResetAll: () => void;
+  themeMode: ThemeMode;
+  onThemeChange: (mode: ThemeMode) => void;
 }
 
 export default function SettingsPanel({
   settings, onUpdateEdgeLabels, onUpdateGraph, onUpdateSearch,
   onResetEdgeLabels, onResetGraph, onResetSearch, onResetAll,
+  themeMode, onThemeChange,
 }: Props) {
   const { edgeLabels, graph, search } = settings;
 
   return (
     <div style={{ padding: '12px 16px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <h3 style={{ fontSize: 14, color: '#fff', margin: 0, fontWeight: 700 }}>Settings</h3>
+        <h3 style={{ fontSize: 14, color: 'var(--text)', margin: 0, fontWeight: 700 }}>Settings</h3>
         <button
           onClick={onResetAll}
           style={{
@@ -281,6 +285,36 @@ export default function SettingsPanel({
           Reset All
         </button>
       </div>
+
+      {/* ── Theme ─────────────────────────────────────────────── */}
+      <div style={sectionStyle}>
+        <span style={sectionTitleStyle}>Theme</span>
+        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+          {(['system', 'dark', 'light'] as ThemeMode[]).map((m) => (
+            <button
+              key={m}
+              onClick={() => onThemeChange(m)}
+              style={{
+                flex: 1,
+                background: themeMode === m ? 'var(--accent)' : 'var(--input-bg)',
+                color: themeMode === m ? '#fff' : 'var(--text-secondary)',
+                border: `1px solid ${themeMode === m ? 'var(--accent)' : 'var(--border)'}`,
+                borderRadius: 4,
+                padding: '5px 0',
+                fontSize: 11,
+                fontWeight: themeMode === m ? 700 : 400,
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+                textTransform: 'capitalize',
+              }}
+            >
+              {m === 'system' ? '\u{1F5A5} Auto' : m === 'dark' ? '\u{1F319} Dark' : '\u{2600} Light'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={dividerStyle} />
 
       {/* ── Connection Labels ──────────────────────────────────── */}
       <div style={sectionStyle}>

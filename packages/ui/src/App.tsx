@@ -32,6 +32,7 @@ import { useApiClient } from './hooks/useApiClient';
 import { useFlowTracer } from './hooks/useFlowTracer';
 import { useSettings } from './hooks/useSettings';
 import { useDatabase } from './hooks/useDatabase';
+import { useTheme } from './hooks/useTheme';
 
 const nodeTypes = { directoryGroup: DirectoryGroupNode };
 
@@ -750,6 +751,9 @@ function GraphApp() {
     resetEdgeLabels, resetGraph, resetSearch, resetAll,
   } = useSettings();
 
+  // Theme
+  const { mode: themeMode, setMode: setThemeMode } = useTheme();
+
   // Apply search defaults from settings on first load
   const settingsInitRef = useRef(false);
   useEffect(() => {
@@ -823,6 +827,41 @@ function GraphApp() {
         setError(String(err));
         setLoading(false);
       });
+  }, []);
+
+  // ─── Live Watch Mode (SSE) ──────────────────────────────────────
+  // Connect to /api/watch for Server-Sent Events. When the server
+  // detects file changes (--watch flag), it pushes the new graph.
+  useEffect(() => {
+    let es: EventSource | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function connect() {
+      try {
+        es = new EventSource('/api/watch');
+        es.onmessage = (event) => {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'graph-update' && msg.graph) {
+              setGraphData(msg.graph);
+            }
+          } catch { /* ignore parse errors */ }
+        };
+        es.onerror = () => {
+          // Server may not have --watch enabled; silently retry after delay
+          es?.close();
+          es = null;
+          retryTimer = setTimeout(connect, 10_000);
+        };
+      } catch { /* EventSource not supported or server down */ }
+    }
+
+    connect();
+
+    return () => {
+      es?.close();
+      if (retryTimer) clearTimeout(retryTimer);
+    };
   }, []);
 
   // Track layout transition to temporarily suppress edge animation
@@ -1306,6 +1345,9 @@ function GraphApp() {
         // Method expansion
         expandedMethodNodes={expandedMethodNodes}
         onExpandMethods={handleExpandMethods}
+        // Theme
+        themeMode={themeMode}
+        onThemeChange={setThemeMode}
       />
     </div>
   );

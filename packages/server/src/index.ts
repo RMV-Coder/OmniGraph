@@ -25,7 +25,11 @@ const staticRateLimit = rateLimit({
 /** Safe hostnames allowed for the proxy endpoint (SSRF prevention) */
 const ALLOWED_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '0.0.0.0']);
 
-export function createServer(targetPath: string, port: number = 4000): void {
+export interface ServerOptions {
+  watch?: boolean;
+}
+
+export function createServer(targetPath: string, port: number = 4000, options: ServerOptions = {}): void {
   const resolvedTarget = path.resolve(targetPath);
   const app = express();
 
@@ -221,6 +225,85 @@ export function createServer(targetPath: string, port: number = 4000): void {
 
   // Database integration routes
   app.use('/api/db', apiRateLimit, createDbRouter(resolvedTarget));
+
+  // ─── Watch Mode (SSE) ──────────────────────────────────────────────
+  // When --watch is enabled, watch for file changes and push graph
+  // updates to connected clients via Server-Sent Events.
+
+  const sseClients = new Set<import('express').Response>();
+
+  app.get('/api/watch', (_req, res) => {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    res.write('data: {"type":"connected"}\n\n');
+    sseClients.add(res);
+    _req.on('close', () => sseClients.delete(res));
+  });
+
+  if (options.watch) {
+    /** Directories to skip when watching */
+    const WATCH_SKIP = new Set(['node_modules', '.git', 'dist', '.next', 'build', '__pycache__']);
+    /** Extensions we care about */
+    const WATCH_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.php', '.md', '.mdx']);
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const DEBOUNCE_MS = 500;
+
+    function broadcastGraphUpdate(): void {
+      if (sseClients.size === 0) return;
+      try {
+        const graph = parseDirectory(targetPath);
+        const payload = JSON.stringify({ type: 'graph-update', graph });
+        for (const client of sseClients) {
+          client.write(`data: ${payload}\n\n`);
+        }
+        console.log(`[watch] Graph updated → ${sseClients.size} client(s), ${graph.nodes.length} nodes`);
+      } catch (err) {
+        console.error('[watch] Error re-parsing:', err);
+      }
+    }
+
+    function onFileChange(filePath: string): void {
+      const ext = path.extname(filePath).toLowerCase();
+      if (!WATCH_EXTS.has(ext)) return;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(broadcastGraphUpdate, DEBOUNCE_MS);
+    }
+
+    /** Recursively watch directories */
+    function watchDir(dir: string): void {
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch { return; }
+
+      for (const entry of entries) {
+        if (WATCH_SKIP.has(entry.name)) continue;
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          try {
+            fs.watch(fullPath, { persistent: false }, (_event, filename) => {
+              if (filename) onFileChange(path.join(fullPath, filename));
+            });
+          } catch { /* some dirs may not be watchable */ }
+          watchDir(fullPath);
+        }
+      }
+    }
+
+    // Watch the root directory itself
+    try {
+      fs.watch(resolvedTarget, { persistent: false }, (_event, filename) => {
+        if (filename) onFileChange(path.join(resolvedTarget, filename));
+      });
+    } catch { /* ignore */ }
+    watchDir(resolvedTarget);
+    console.log('[watch] File watcher active — changes will auto-refresh the graph');
+  }
 
   // Serve the built UI — resolve from multiple possible locations:
   // 1. Published package: omnigraph/dist/cli.js → omnigraph/ui/

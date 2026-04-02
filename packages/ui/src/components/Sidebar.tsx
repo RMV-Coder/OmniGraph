@@ -45,9 +45,9 @@ const NODE_TYPE_LABELS: Record<string, string> = {
 
 const selectStyle: React.CSSProperties = {
   width: '100%',
-  background: '#1a1a2e',
-  color: '#e0e0e0',
-  border: '1px solid #444',
+  background: 'var(--input-bg)',
+  color: 'var(--text)',
+  border: '1px solid var(--border)',
   borderRadius: 4,
   padding: '4px 8px',
   fontSize: 12,
@@ -57,7 +57,7 @@ const selectStyle: React.CSSProperties = {
 
 const labelStyle: React.CSSProperties = {
   fontSize: 11,
-  color: '#666',
+  color: 'var(--text-dim)',
   marginBottom: 4,
   textTransform: 'uppercase',
   letterSpacing: '0.5px',
@@ -79,15 +79,15 @@ const chipBase: React.CSSProperties = {
 
 const dividerStyle: React.CSSProperties = {
   height: 1,
-  background: '#333',
+  background: 'var(--divider)',
   margin: '4px 0',
 };
 
 const exportBtnStyle: React.CSSProperties = {
   flex: 1,
-  background: '#1a1a2e',
-  color: '#e0e0e0',
-  border: '1px solid #444',
+  background: 'var(--input-bg)',
+  color: 'var(--text)',
+  border: '1px solid var(--border)',
   borderRadius: 4,
   padding: '5px 0',
   fontSize: 11,
@@ -185,6 +185,9 @@ interface Props {
   // Method expansion
   expandedMethodNodes: Set<string>;
   onExpandMethods: (nodeId: string) => void;
+  // Theme
+  themeMode: import('../hooks/useTheme').ThemeMode;
+  onThemeChange: (mode: import('../hooks/useTheme').ThemeMode) => void;
 }
 
 // ─── Tab Bar ─────────────────────────────────────────────────────────
@@ -210,7 +213,7 @@ function TabBar({
     <div
       style={{
         display: 'flex',
-        borderBottom: '1px solid #333',
+        borderBottom: '1px solid var(--divider)',
         flexShrink: 0,
       }}
     >
@@ -222,10 +225,10 @@ function TabBar({
             onClick={() => onTabChange(t.key)}
             style={{
               flex: 1,
-              background: activeTab === t.key ? '#1a1a2e' : 'transparent',
-              color: activeTab === t.key ? '#fff' : '#666',
+              background: activeTab === t.key ? 'var(--bg)' : 'transparent',
+              color: activeTab === t.key ? 'var(--text)' : 'var(--text-dim)',
               border: 'none',
-              borderBottom: activeTab === t.key ? '2px solid #4a90e8' : '2px solid transparent',
+              borderBottom: activeTab === t.key ? '2px solid var(--accent)' : '2px solid transparent',
               padding: '8px 4px',
               fontSize: 11,
               fontWeight: activeTab === t.key ? 700 : 400,
@@ -771,6 +774,8 @@ export default function Sidebar(props: Props) {
     onDbAddConnection, onDbUpdateConnection, onDbRemoveConnection,
     onDbConnectWithCredentials, onDbConnectFromEnv, onDbConnectFromCustomKey, onDbDisconnect, onDbLoadSchema,
     onDbExecuteQuery, onDbClearQuery, onDbSelectTable,
+    // Theme
+    themeMode, onThemeChange,
   } = props;
 
   const [sidebarWidth, setSidebarWidth] = useState(loadSavedWidth);
@@ -821,8 +826,8 @@ export default function Sidebar(props: Props) {
     <div
       style={{
         width: sidebarWidth,
-        background: '#0d0d1e',
-        borderLeft: '1px solid #333',
+        background: 'var(--bg-panel)',
+        borderLeft: '1px solid var(--divider)',
         display: 'flex',
         flexDirection: 'column',
         overflowY: 'auto',
@@ -929,6 +934,8 @@ export default function Sidebar(props: Props) {
           onResetGraph={onResetGraph}
           onResetSearch={onResetSearch}
           onResetAll={onResetAll}
+          themeMode={themeMode}
+          onThemeChange={onThemeChange}
         />
       )}
     </div>

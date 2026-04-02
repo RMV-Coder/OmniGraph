@@ -14,7 +14,8 @@ program
   .description('Statically analyze a codebase and visualize its dependency graph')
   .version('1.0.0')
   .option('--path <path>', 'Path to the repository to analyze', '.')
-  .option('--json', 'Output results as JSON (machine-readable)');
+  .option('--json', 'Output results as JSON (machine-readable)')
+  .option('--watch', 'Watch for file changes and auto-refresh the graph');
 
 // Register subcommands
 program.addCommand(graphCommand);
@@ -30,7 +31,7 @@ program.action(async (opts) => {
   const targetPath = path.resolve(opts.path);
   const port = 4000;
   const { createServer } = await import('@omnigraph/server');
-  createServer(targetPath, port);
+  createServer(targetPath, port, { watch: opts.watch ?? false });
 });
 
 program.parse(process.argv);
