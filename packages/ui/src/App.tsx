@@ -33,6 +33,9 @@ import { useFlowTracer } from './hooks/useFlowTracer';
 import { useSettings } from './hooks/useSettings';
 import { useDatabase } from './hooks/useDatabase';
 import { useTheme } from './hooks/useTheme';
+import { useKeyboardShortcuts, SHORTCUT_LIST } from './hooks/useKeyboardShortcuts';
+import { useBookmarks } from './hooks/useBookmarks';
+import { useAnnotations } from './hooks/useAnnotations';
 
 const nodeTypes = { directoryGroup: DirectoryGroupNode };
 
@@ -754,6 +757,22 @@ function GraphApp() {
   // Theme
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
 
+  // Bookmarks & Annotations
+  const bookmarks = useBookmarks();
+  const annotations = useAnnotations();
+
+  // Keyboard shortcuts
+  const [showShortcutHelp, setShowShortcutHelp] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useKeyboardShortcuts({
+    onFocusSearch: () => searchInputRef.current?.focus(),
+    onLayoutChange: (preset) => setLayoutPreset(preset as LayoutPreset),
+    onCompact: () => handleCompact(),
+    onCloseInspector: () => { setSelected(null); setShowShortcutHelp(false); },
+    onToggleHelp: () => setShowShortcutHelp(prev => !prev),
+  });
+
   // Apply search defaults from settings on first load
   const settingsInitRef = useRef(false);
   useEffect(() => {
@@ -1258,6 +1277,68 @@ function GraphApp() {
             }
           `}</style>
         )}
+        {/* Keyboard shortcut help overlay */}
+        {showShortcutHelp && (
+          <div
+            onClick={() => setShowShortcutHelp(false)}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'rgba(10, 10, 30, 0.85)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 60,
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: 'var(--bg-panel)',
+                border: '1px solid var(--border)',
+                borderRadius: 12,
+                padding: '24px 32px',
+                minWidth: 320,
+                boxShadow: '0 8px 32px var(--shadow)',
+              }}
+            >
+              <h3 style={{ color: 'var(--text)', marginBottom: 16, fontSize: 16 }}>
+                Keyboard Shortcuts
+              </h3>
+              {SHORTCUT_LIST.map(({ keys, description }) => (
+                <div
+                  key={keys}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    padding: '6px 0',
+                    borderBottom: '1px solid var(--divider)',
+                  }}
+                >
+                  <kbd
+                    style={{
+                      background: 'var(--bg-raised)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 4,
+                      padding: '2px 8px',
+                      fontSize: 12,
+                      fontFamily: 'monospace',
+                      color: 'var(--text)',
+                    }}
+                  >
+                    {keys}
+                  </kbd>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: 13, marginLeft: 16 }}>
+                    {description}
+                  </span>
+                </div>
+              ))}
+              <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 12, textAlign: 'center' }}>
+                Press <kbd style={{ fontSize: 10, padding: '1px 4px', background: 'var(--bg-raised)', border: '1px solid var(--border)', borderRadius: 3 }}>?</kbd> or click outside to close
+              </div>
+            </div>
+          </div>
+        )}
       </div>
       <Sidebar
         activeTab={activeTab}
@@ -1268,6 +1349,7 @@ function GraphApp() {
         onDirectionChange={setMindmapDirection}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
+        searchInputRef={searchInputRef}
         searchFilterMode={searchFilterMode}
         onSearchFilterModeChange={setSearchFilterMode}
         searchDepth={searchDepth}
@@ -1348,6 +1430,31 @@ function GraphApp() {
         // Theme
         themeMode={themeMode}
         onThemeChange={setThemeMode}
+        // Bookmarks
+        bookmarks={bookmarks.bookmarks}
+        onSaveBookmark={() => {
+          const name = `View ${bookmarks.bookmarks.length + 1}`;
+          bookmarks.addBookmark({
+            name,
+            layoutPreset,
+            searchQuery,
+            searchFilterMode,
+            searchDepth,
+            activeTypes: Array.from(activeTypes),
+          });
+        }}
+        onLoadBookmark={(bm) => {
+          setLayoutPreset(bm.layoutPreset as LayoutPreset);
+          setSearchQuery(bm.searchQuery);
+          setSearchFilterMode(bm.searchFilterMode as SearchFilterMode);
+          setSearchDepth(bm.searchDepth);
+          setActiveTypes(new Set(bm.activeTypes));
+        }}
+        onRemoveBookmark={bookmarks.removeBookmark}
+        // Annotations
+        annotation={selected ? annotations.getAnnotation(selected.id) : undefined}
+        onSetAnnotation={(text) => { if (selected) annotations.setAnnotation(selected.id, text); }}
+        annotatedNodeIds={annotations.annotatedNodeIds}
       />
     </div>
   );

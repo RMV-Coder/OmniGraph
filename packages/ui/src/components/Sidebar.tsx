@@ -121,6 +121,7 @@ interface Props {
   // Search & filter
   searchQuery: string;
   onSearchChange: (query: string) => void;
+  searchInputRef?: React.RefObject<HTMLInputElement>;
   searchFilterMode: SearchFilterMode;
   onSearchFilterModeChange: (mode: SearchFilterMode) => void;
   searchDepth: number;
@@ -202,6 +203,15 @@ interface Props {
   // Theme
   themeMode: import('../hooks/useTheme').ThemeMode;
   onThemeChange: (mode: import('../hooks/useTheme').ThemeMode) => void;
+  // Bookmarks
+  bookmarks: import('../hooks/useBookmarks').Bookmark[];
+  onSaveBookmark: () => void;
+  onLoadBookmark: (bm: import('../hooks/useBookmarks').Bookmark) => void;
+  onRemoveBookmark: (id: string) => void;
+  // Annotations
+  annotation?: import('../hooks/useAnnotations').Annotation;
+  onSetAnnotation: (text: string) => void;
+  annotatedNodeIds: Set<string>;
 }
 
 // ─── Tab Bar ─────────────────────────────────────────────────────────
@@ -357,22 +367,26 @@ function ExportDropdown({
 
 function ControlsPanel({
   layoutPreset, onLayoutChange, mindmapDirection, onDirectionChange,
-  searchQuery, onSearchChange, searchFilterMode, onSearchFilterModeChange,
+  searchQuery, onSearchChange, searchInputRef, searchFilterMode, onSearchFilterModeChange,
   searchDepth, onSearchDepthChange,
   activeTypes, onTypeToggle, availableTypes,
   matchCount, totalCount, selectedNode, onCloseInspector,
   onExportPng, onExportSvg, onExportJson, onExportGif,
   onCompact, isCompacting,
   expandedMethodNodes, onExpandMethods,
+  bookmarks, onSaveBookmark, onLoadBookmark, onRemoveBookmark,
+  annotation, onSetAnnotation,
 }: Pick<Props,
   'layoutPreset' | 'onLayoutChange' | 'mindmapDirection' | 'onDirectionChange' |
-  'searchQuery' | 'onSearchChange' | 'searchFilterMode' | 'onSearchFilterModeChange' |
+  'searchQuery' | 'onSearchChange' | 'searchInputRef' | 'searchFilterMode' | 'onSearchFilterModeChange' |
   'searchDepth' | 'onSearchDepthChange' |
   'activeTypes' | 'onTypeToggle' | 'availableTypes' |
   'matchCount' | 'totalCount' | 'selectedNode' | 'onCloseInspector' |
   'onExportPng' | 'onExportSvg' | 'onExportJson' | 'onExportGif' |
   'onCompact' | 'isCompacting' |
-  'expandedMethodNodes' | 'onExpandMethods'
+  'expandedMethodNodes' | 'onExpandMethods' |
+  'bookmarks' | 'onSaveBookmark' | 'onLoadBookmark' | 'onRemoveBookmark' |
+  'annotation' | 'onSetAnnotation'
 >) {
   return (
     <>
@@ -410,10 +424,11 @@ function ControlsPanel({
           <p style={labelStyle}>Search</p>
           <div style={{ position: 'relative' }}>
             <input
+              ref={searchInputRef}
               type="text"
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
-              placeholder="Search nodes..."
+              placeholder="Search nodes... (Ctrl+K)"
               style={{ ...selectStyle, padding: '6px 28px 6px 8px' }}
             />
             {searchQuery && (
@@ -733,16 +748,104 @@ function ControlsPanel({
                     : `Expand Methods (${selectedNode.methods.length})`}
                 </button>
               )}
+              {/* Annotation (F62) */}
+              <div style={{ marginTop: 4 }}>
+                <p style={labelStyle}>Note</p>
+                <textarea
+                  value={annotation?.text ?? ''}
+                  onChange={(e) => onSetAnnotation(e.target.value)}
+                  placeholder="Add a note for this node..."
+                  rows={2}
+                  style={{
+                    ...selectStyle,
+                    resize: 'vertical',
+                    minHeight: 36,
+                    fontSize: 11,
+                    fontFamily: 'inherit',
+                    padding: '6px 8px',
+                  }}
+                />
+              </div>
               <div style={dividerStyle} />
               <CodeViewer filePath={selectedNode.metadata.filePath ?? selectedNode.id} />
             </>
           )}
+
+          {/* Annotation for DB nodes */}
+          {selectedNode.id.startsWith('db://') && (
+            <div style={{ marginTop: 4 }}>
+              <p style={labelStyle}>Note</p>
+              <textarea
+                value={annotation?.text ?? ''}
+                onChange={(e) => onSetAnnotation(e.target.value)}
+                placeholder="Add a note for this node..."
+                rows={2}
+                style={{
+                  ...selectStyle,
+                  resize: 'vertical',
+                  minHeight: 36,
+                  fontSize: 11,
+                  fontFamily: 'inherit',
+                  padding: '6px 8px',
+                }}
+              />
+            </div>
+          )}
         </div>
       ) : (
         <div style={{ padding: '10px 16px' }}>
-          <p style={{ fontSize: 11, color: '#555', fontStyle: 'italic', margin: 0 }}>
+          <p style={{ fontSize: 11, color: 'var(--text-dim)', fontStyle: 'italic', margin: 0 }}>
             Click a node to inspect
           </p>
+
+          {/* Bookmarks (F61) */}
+          {bookmarks.length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <p style={{ ...labelStyle, marginBottom: 0 }}>Saved Views</p>
+                <button
+                  onClick={onSaveBookmark}
+                  style={{ background: 'none', border: '1px solid var(--border)', color: 'var(--text-muted)', fontSize: 9, padding: '2px 8px', borderRadius: 3, cursor: 'pointer' }}
+                >
+                  + Save Current
+                </button>
+              </div>
+              {bookmarks.map(bm => (
+                <div
+                  key={bm.id}
+                  style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 0' }}
+                >
+                  <button
+                    onClick={() => onLoadBookmark(bm)}
+                    style={{
+                      flex: 1, textAlign: 'left', background: 'none', border: 'none',
+                      color: 'var(--accent)', fontSize: 11, cursor: 'pointer', padding: 0,
+                    }}
+                  >
+                    {bm.name}
+                  </button>
+                  <button
+                    onClick={() => onRemoveBookmark(bm.id)}
+                    style={{ background: 'none', border: 'none', color: 'var(--text-dim)', cursor: 'pointer', fontSize: 12, padding: 0 }}
+                  >
+                    &times;
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {bookmarks.length === 0 && (
+            <button
+              onClick={onSaveBookmark}
+              style={{
+                marginTop: 12, width: '100%', background: 'none',
+                border: '1px dashed var(--border)', color: 'var(--text-dim)',
+                fontSize: 11, padding: '6px', borderRadius: 4, cursor: 'pointer',
+              }}
+            >
+              Save current view as bookmark
+            </button>
+          )}
         </div>
       )}
     </>

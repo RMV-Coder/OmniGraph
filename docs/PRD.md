@@ -124,9 +124,9 @@ Modern full-stack monorepos have deeply nested dependency chains that span langu
 
 | # | Feature | Description | Status |
 |---|---------|-------------|--------|
-| F61 | Bookmarks / Saved Views | Save a filter + layout + zoom + selected nodes as a named view. One-click recall: "Auth flow", "Database layer", "API surface". localStorage + JSON export. | Not Started |
-| F62 | Node Annotations / Notes | Add sticky notes to nodes that persist across sessions (localStorage). Onboarding developers can leave breadcrumbs for teammates. | Not Started |
-| F63 | Keyboard Shortcuts | `Ctrl+K` search, arrow keys to navigate nodes, `E` expand methods, `T` trace, `C` compact, `1-6` layout presets. Customizable via settings. | Not Started |
+| F61 | Bookmarks / Saved Views | Save a filter + layout + search state as a named view. One-click recall. localStorage persistence with JSON export/import. | Done |
+| F62 | Node Annotations / Notes | Add sticky notes to nodes that persist across sessions (localStorage). Textarea in node inspector. JSON export/import. | Done |
+| F63 | Keyboard Shortcuts | `Ctrl+K` search, `1-6` layout presets, `C` compact, `Esc` close inspector, `?` help overlay. | Done |
 | F64 | Multi-Select & Batch Operations | Shift+click or drag-select multiple nodes. Batch trace, expand, hide, or highlight. "Select all of type X" context menu. | Not Started |
 | F65 | Large Graph Performance | Lazy loading and virtualization for 1000+ node graphs. Web Worker parsing. Incremental layout updates. Canvas-based rendering fallback for very large graphs. | Not Started |
 
