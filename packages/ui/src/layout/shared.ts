@@ -31,6 +31,21 @@ export const NODE_COLORS: Record<string, string> = {
   // API Schema
   'openapi-spec': '#85ea2d',        // Swagger green
   'graphql-schema': '#e10098',      // GraphQL pink
+  // Go
+  'go-file': '#00ADD8',             // Go brand cyan
+  'go-main': '#00ADD8',
+  'go-http-handler': '#00897B',     // Teal for HTTP handlers
+  // Rust
+  'rust-file': '#DEA584',           // Rust orange
+  'rust-http-handler': '#B7410E',   // Darker rust for handlers
+  // Java
+  'java-file': '#f89820',           // Java orange
+  'java-spring-controller': '#6DB33F', // Spring green
+  'java-spring-service': '#68BD45',
+  'java-spring-repository': '#85C440',
+  'java-spring-component': '#9CCC65',
+  'java-spring-config': '#558B2F',
+  'java-spring-entity': '#33691E',
   // PHP
   'php-file': '#777bb4',
   'php-laravel-controller': '#ff2d20',

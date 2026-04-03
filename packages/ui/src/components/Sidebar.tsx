@@ -43,6 +43,18 @@ const NODE_TYPE_LABELS: Record<string, string> = {
   'method-node': 'Method',
   'openapi-spec': 'OpenAPI Spec',
   'graphql-schema': 'GraphQL Schema',
+  'go-file': 'Go',
+  'go-main': 'Go Main',
+  'go-http-handler': 'Go Handler',
+  'rust-file': 'Rust',
+  'rust-http-handler': 'Rust Handler',
+  'java-file': 'Java',
+  'java-spring-controller': 'Spring Controller',
+  'java-spring-service': 'Spring Service',
+  'java-spring-repository': 'Spring Repository',
+  'java-spring-component': 'Spring Component',
+  'java-spring-config': 'Spring Config',
+  'java-spring-entity': 'Spring Entity',
 };
 
 const selectStyle: React.CSSProperties = {

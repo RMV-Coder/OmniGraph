@@ -113,9 +113,9 @@ Modern full-stack monorepos have deeply nested dependency chains that span langu
 | # | Feature | Description | Status |
 |---|---------|-------------|--------|
 | F54 | Plugin Marketplace | Discovery mechanism for community parsers published as npm packages (`omnigraph-plugin-go`, `omnigraph-plugin-rust`). Auto-install and register via `omnigraph plugin add <name>`. | Not Started |
-| F55 | Go Parser | `GoParser` for `.go` files — detects packages, imports, structs, interfaces, HTTP handlers (net/http, gin, echo, fiber). Resolves Go module imports. | Not Started |
-| F56 | Rust Parser | `RustParser` for `.rs` files — detects modules, `use` statements, structs, traits, impl blocks. Resolves `mod` and `crate::` imports. Detects Actix/Axum route handlers. | Not Started |
-| F57 | Java/Spring Parser | `JavaParser` for `.java` files — detects `@RestController`, `@Service`, `@Repository`, `@Component` annotations. Resolves package imports. Maven/Gradle module boundaries. | Not Started |
+| F55 | Go Parser | `GoParser` for `.go` files — detects packages, imports, structs, interfaces, HTTP handlers (net/http, gin, echo, fiber, chi, mux). Resolves Go module imports via go.mod. | Done |
+| F56 | Rust Parser | `RustParser` for `.rs` files — detects modules, `use` statements, structs, traits, impl blocks. Resolves `mod` and `crate::` imports. Detects Actix/Axum/Rocket route handlers. | Done |
+| F57 | Java/Spring Parser | `JavaParser` for `.java` files — detects `@RestController`, `@Service`, `@Repository`, `@Component`, `@Entity` annotations. Resolves package imports. Spring `@GetMapping`/`@PostMapping` route extraction. | Done |
 | F58 | Shareable Graph Links | Export graph as a self-contained HTML file with embedded React Flow + data. Recipients can interact with the graph without installing OmniGraph. | Not Started |
 | F59 | Obsidian Plugin | Package OmniGraph's Markdown parser + React Flow UI as an Obsidian community plugin for vault-wide dependency visualization. | Not Started |
 | F60 | Embeddable Documentation Graphs | Generate static SVGs or interactive `<iframe>` embeds for docs sites. Auto-update on CI builds. "Here's our architecture" that stays current. | Not Started |

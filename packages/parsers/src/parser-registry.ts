@@ -4,6 +4,9 @@ import { PythonParser } from './python/python-parser';
 import { PhpParser } from './php/php-parser';
 import { MarkdownParser } from './markdown/markdown-parser';
 import { SchemaParser } from './schema/schema-parser';
+import { GoParser } from './go/go-parser';
+import { RustParser } from './rust/rust-parser';
+import { JavaParser } from './java/java-parser';
 import { OmniGraph, OmniNode, OmniEdge } from './types';
 import { detectHttpCalls, matchRoutes, detectWebSocketEndpoints, matchWebSocketEndpoints } from './cross-network';
 import type { HttpCall, WebSocketEndpoint } from './cross-network';
@@ -16,8 +19,14 @@ const phpParser = new PhpParser();
 const markdownParser = new MarkdownParser();
 
 const schemaParser = new SchemaParser();
+const goParser = new GoParser();
+const rustParser = new RustParser();
+const javaParser = new JavaParser();
 
-const parsers: IParser[] = [new TypeScriptParser(), pythonParser, phpParser, markdownParser, schemaParser];
+const parsers: IParser[] = [
+  new TypeScriptParser(), pythonParser, phpParser, markdownParser,
+  schemaParser, goParser, rustParser, javaParser,
+];
 
 /** Always skip these directories regardless of .gitignore */
 const ALWAYS_SKIP = new Set(['node_modules', '.git', 'dist', '.next', 'build']);
@@ -46,6 +55,9 @@ export function parseDirectory(dirPath: string): OmniGraph {
   pythonParser.setRootDir(dirPath);
   phpParser.setRootDir(dirPath);
   markdownParser.setRootDir(dirPath);
+  goParser.setRootDir(dirPath);
+  rustParser.setRootDir(dirPath);
+  javaParser.setRootDir(dirPath);
 
   function walk(dir: string): void {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
