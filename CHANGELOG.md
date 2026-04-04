@@ -2,6 +2,64 @@
 
 All notable changes to OmniGraph are documented in this file.
 
+## [1.3.0] - 2026-04-04
+
+### Added
+
+#### New Language Parsers
+- **Go parser** — Parses `.go` files: package declarations, single and grouped imports, struct/interface/function definitions. Detects HTTP route handlers for net/http, Gin, Echo, Fiber, Chi, and Gorilla Mux. Resolves imports via `go.mod` module path.
+- **Rust parser** — Parses `.rs` files: `mod`/`use` declarations, struct/enum/trait/impl definitions, function/method extraction. Detects route attributes (`#[get("/path")]`) for Actix-web, Axum, and Rocket. Resolves `crate::` imports and `mod` file paths.
+- **Java/Spring parser** — Parses `.java` files: package/import declarations, class/interface/enum/record definitions. Detects Spring stereotypes (`@RestController`, `@Service`, `@Repository`, `@Component`) and mapping annotations (`@GetMapping`, `@PostMapping`, `@RequestMapping`) with route extraction.
+- **OpenAPI/Swagger parser** — Parses OpenAPI spec files (JSON and YAML): extracts path endpoints with HTTP methods and schema/model definitions as method-level metadata.
+- **GraphQL parser** — Parses `.graphql`/`.gql` files: type/input/enum/interface/union/scalar definitions, Query/Mutation/Subscription field extraction.
+
+#### Live Watch Mode
+- **`--watch` flag** — Start the server with `--watch` to enable live file monitoring via `fs.watch()` with recursive directory walking
+- **SSE push updates** — File changes trigger automatic re-parsing and push graph updates to the UI via Server-Sent Events (`/api/watch` endpoint)
+- **Smart debouncing** — 500ms debounce window prevents rapid re-parses during batch saves
+- **Extension filtering** — Only watches relevant file types (`.ts`, `.tsx`, `.js`, `.jsx`, `.py`, `.php`, `.md`, `.mdx`, `.go`, `.rs`, `.java`, `.graphql`, `.gql`)
+
+#### Dark/Light Theme
+- **System-aware theme toggle** — Three modes: system (follows OS preference), dark, light
+- **CSS custom properties** — 16 color tokens (`--bg`, `--text`, `--accent`, etc.) applied to `:root` via JavaScript
+- **localStorage persistence** — Theme preference survives page reloads
+- **Settings panel integration** — Theme selector buttons in the Settings tab
+
+#### Diff & Blast Radius CLI
+- **`omnigraph diff` command** — Analyzes changed files between git refs and computes blast radius via BFS on the reverse dependency graph
+- **Options** — `--base` (default: auto-detect main/master/develop), `--head` (default: HEAD), `--uncommitted`, `--depth`, `--blast-only`, `--json`
+- **Blast radius computation** — BFS traversal of reverse dependency edges to find all transitively affected files
+
+#### Keyboard Shortcuts
+- `Ctrl+K` / `⌘K` — Focus search input
+- `1`–`6` — Switch between layout presets
+- `C` — Compact visible nodes
+- `?` — Toggle shortcut help overlay
+- `Esc` — Close panels, overlays, and deselect nodes
+- Input-aware — Shortcuts are suppressed when typing in input/textarea fields
+
+#### Bookmarks
+- **Named graph views** — Save and restore layout preset, search query, filter mode, search depth, and active type filters
+- **CRUD operations** — Create, rename, delete bookmarks from the Graph sidebar tab
+- **Export/import** — JSON serialization with ID regeneration on import
+- **localStorage persistence** — Bookmarks survive page reloads
+
+#### Node Annotations
+- **Text notes on nodes** — Attach freeform text annotations to any node via the node inspector
+- **Annotated node tracking** — Quick lookup of which nodes have annotations
+- **Export/import** — JSON serialization for sharing annotations across sessions
+- **localStorage persistence** — Annotations survive page reloads
+
+#### CLI Live DB Schema
+- **`schema --live` flag** — Connect directly to PostgreSQL or MongoDB to introspect live database schema
+- **Connection options** — `--engine`, `--host`, `--db-port`, `--database`, `--user`, `--password`, `--connection-string`
+
+### Changed
+- **README** — Updated with all new languages, features, CLI commands, and technology stack
+- **Bundle script** — Updated description and keywords for npm publish
+
+---
+
 ## [1.2.0] - 2026-04-01
 
 ### Added
