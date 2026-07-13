@@ -10,6 +10,7 @@ import { JavaParser } from './java/java-parser';
 import { OmniGraph, OmniNode, OmniEdge } from './types';
 import { detectHttpCalls, matchRoutes, detectWebSocketEndpoints, matchWebSocketEndpoints } from './cross-network';
 import type { HttpCall, WebSocketEndpoint } from './cross-network';
+import { detectFeatures } from './features/feature-detector';
 import * as fs from 'fs';
 import * as path from 'path';
 import ignore, { Ignore } from 'ignore';
@@ -28,8 +29,21 @@ const parsers: IParser[] = [
   schemaParser, goParser, rustParser, javaParser,
 ];
 
-/** Always skip these directories regardless of .gitignore */
-const ALWAYS_SKIP = new Set(['node_modules', '.git', 'dist', '.next', 'build']);
+/**
+ * Directories that are never application source and are always skipped,
+ * regardless of .gitignore. Covers dependencies, build/cache output,
+ * VCS/editor metadata, and agent-tool dirs (e.g. `.claude/worktrees`,
+ * which can hold many full repo checkouts and explode the file count).
+ */
+export const ALWAYS_SKIP = new Set([
+  // dependencies & build output
+  'node_modules', 'dist', 'build', 'out', '.next', '.nuxt', '.svelte-kit',
+  'coverage', '.turbo', '.cache', '.parcel-cache', '.vercel', '.output',
+  // python
+  '__pycache__', '.venv', 'venv', '.pytest_cache', '.mypy_cache',
+  // VCS, editor & agent tooling
+  '.git', '.hg', '.svn', '.idea', '.vscode', '.claude', '.agents',
+]);
 
 /** Load and merge .gitignore files from the root directory */
 function loadGitignore(rootDir: string): Ignore {
@@ -59,8 +73,15 @@ export function parseDirectory(dirPath: string): OmniGraph {
   rustParser.setRootDir(dirPath);
   javaParser.setRootDir(dirPath);
 
-  function walk(dir: string): void {
+  function walk(dir: string, isRoot: boolean): void {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+    // Skip nested git boundaries (worktrees, submodules, nested clones):
+    // parsing another repo's checkout inside this one duplicates the whole
+    // tree and can multiply the file count many times over. Never skip the
+    // root repo itself.
+    if (!isRoot && entries.some(e => e.name === '.git')) return;
+
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       const relativePath = path.relative(dirPath, fullPath).replace(/\\/g, '/');
@@ -69,7 +90,7 @@ export function parseDirectory(dirPath: string): OmniGraph {
       if (ig.ignores(relativePath + (entry.isDirectory() ? '/' : ''))) continue;
 
       if (entry.isDirectory()) {
-        walk(fullPath);
+        walk(fullPath, false);
       } else if (entry.isFile()) {
         const parser = parsers.find(p => p.canHandle(fullPath));
         if (!parser) continue;
@@ -89,7 +110,7 @@ export function parseDirectory(dirPath: string): OmniGraph {
     }
   }
 
-  walk(dirPath);
+  walk(dirPath, true);
 
   // ─── Cross-Network Tracing (F12) ──────────────────────────────────
   // Scan all source files for HTTP client calls and match them to
@@ -129,5 +150,12 @@ export function parseDirectory(dirPath: string): OmniGraph {
   const nodeIds = new Set(nodes.map(n => n.id));
   const validEdges = edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target));
 
-  return { nodes, edges: validEdges };
+  const graph: OmniGraph = { nodes, edges: validEdges };
+
+  // ─── Feature Grouping (P0) ────────────────────────────────────────
+  // Cluster nodes into human-meaningful features and stamp membership
+  // onto each node's metadata. Runs last — needs the full node/edge set.
+  graph.features = detectFeatures(graph);
+
+  return graph;
 }

@@ -74,6 +74,14 @@ omnigraph --path <repo-path> diff --uncommitted                # Uncommitted cha
 omnigraph --path <repo-path> diff --base develop --depth 3     # Custom base, BFS depth
 omnigraph --path <repo-path> diff --blast-only                 # Only show affected dependents
 
+# Feature grouping — cluster files into higher-level features
+omnigraph --path <repo-path> graph --features                  # List detected features
+omnigraph --path <repo-path> --json graph --features           # Machine-readable feature model
+
+# Generate per-feature documentation (Markdown + Mermaid)
+omnigraph --path <repo-path> docs                              # → <repo>/omnigraph-docs/
+omnigraph --path <repo-path> docs --out ./architecture         # Custom output directory
+
 # Machine-readable JSON output (for AI coding agents)
 omnigraph --path <repo-path> --json graph --stats
 omnigraph --path <repo-path> --json trace --from src/index.ts
@@ -110,6 +118,12 @@ OmniGraph doesn't just find imports — it understands framework patterns:
 - **Dark/Light Theme**: System-aware theme toggle with dark (default) and light modes. Persisted in localStorage.
 - **Color-Coded Types**: Each node type has a distinct color — controllers (red), injectables (blue), modules (orange), Python files (blue), FastAPI routes (teal), Laravel controllers (red), Go files (cyan), Rust files (sandy), Java/Spring (green), OpenAPI (lime), GraphQL (pink), markdown (purple), DB tables (steel-blue), and more
 - **Clickable Minimap**: Zoom and pan directly on the minimap for faster navigation
+
+### Feature Grouping & Docs
+OmniGraph clusters files into higher-level **features** (Authentication, Payments, Channels…) so you can read a codebase by capability, not just by file. Features are derived from route paths, directory structure, edge connectivity, and filenames — no config required — and each node is stamped with its feature in the graph JSON (for AI agents).
+- **Graph view** — the "Group by Feature" layout draws one box per feature.
+- **CLI** — `graph --features` lists them; `--json` emits the full model.
+- **Docs generator** — `omnigraph docs` writes a navigable docs tree: a `README.md` index with a Mermaid map of how features connect, a page per feature (summary, routes, dependencies, key files, and a Mermaid flow diagram), and a `features.json` manifest. Regenerate it in CI to keep an always-current architecture guide.
 
 ### Live Watch Mode
 Start with `--watch` to enable live file watching. OmniGraph monitors your project for changes and automatically re-parses and pushes updates to the UI via Server-Sent Events (SSE). No manual refresh needed.

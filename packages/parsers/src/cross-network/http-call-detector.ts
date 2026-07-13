@@ -216,19 +216,13 @@ export function normalizeUrl(url: string): string {
     return ':' + paramName;
   });
 
-  // If the URL ends with a trailing slash from string concatenation (e.g. '/api/users/'),
-  // append :param since the concatenated part is a dynamic segment
-  if (normalized.endsWith('/') && normalized !== '/') {
-    normalized = normalized + ':param';
-  }
-
   // If nothing remains after stripping, return original
   if (!normalized || normalized === '/') return url.toLowerCase();
 
   // Ensure starts with /
   if (!normalized.startsWith('/')) normalized = '/' + normalized;
 
-  // Remove trailing slash
+  // Remove trailing slash (dynamic segments are captured via ${...} → :param above)
   normalized = normalized.replace(/\/+$/, '') || '/';
 
   return normalized.toLowerCase();

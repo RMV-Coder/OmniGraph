@@ -13,6 +13,7 @@ export const graphCommand = new Command('graph')
   .option('--edges', 'List all edges instead of nodes')
   .option('--depth <n>', 'Max depth for --deps/--rdeps traversal', '3')
   .option('--stats', 'Show summary statistics only')
+  .option('--features', 'List detected features (clustered node groups)')
   .action((opts, cmd) => {
     const targetPath = cmd.parent?.opts().path ?? '.';
     const json = cmd.parent?.opts().json ?? false;
@@ -49,6 +50,28 @@ export const graphCommand = new Command('graph')
           console.log(`  ${type.padEnd(30)} ${count}`);
         }
       }
+      return;
+    }
+
+    // Features mode
+    if (opts.features) {
+      const model = graph.features ?? { features: [], shared: [], ungrouped: [] };
+      if (json) {
+        printOutput(model, fmtOpts);
+        return;
+      }
+      console.log(`${bold('Features:')} ${model.features.length}`);
+      if (model.features.length > 0) {
+        const rows = model.features.map(f => ({
+          feature: f.name,
+          nodes: f.stats.nodes,
+          routes: f.stats.routes,
+          entities: f.stats.entities,
+          source: f.source,
+        }));
+        printOutput(rows, fmtOpts);
+      }
+      console.log(`\n${dim(`shared: ${model.shared.length}   ungrouped: ${model.ungrouped.length}`)}`);
       return;
     }
 

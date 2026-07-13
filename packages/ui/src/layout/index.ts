@@ -1,5 +1,6 @@
 import type { LayoutFunction, LayoutPreset, LayoutInput, LayoutOutput, LayoutOptions } from './types';
 import { directoryLayout } from './directoryLayout';
+import { featuresLayout } from './featuresLayout';
 import { hierarchicalLayout } from './hierarchicalLayout';
 import { mindmapLayout } from './mindmapLayout';
 import { forceLayout } from './forceLayout';
@@ -11,6 +12,7 @@ export { LAYOUT_PRESETS } from './types';
 
 const layouts: Record<LayoutPreset, LayoutFunction> = {
   directory: directoryLayout,
+  features: featuresLayout,
   hierarchical: hierarchicalLayout,
   columns: columnsLayout,
   mindmap: mindmapLayout,
