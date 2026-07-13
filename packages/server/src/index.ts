@@ -5,7 +5,7 @@ import * as https from 'https';
 import path from 'path';
 import { URL } from 'url';
 import rateLimit from 'express-rate-limit';
-import { parseDirectory } from '@omnigraph/parsers';
+import { parseDirectory, ALWAYS_SKIP } from '@omnigraph/parsers';
 import { createDbRouter } from './db';
 
 const apiRateLimit = rateLimit({
@@ -245,8 +245,6 @@ export function createServer(targetPath: string, port: number = 4000, options: S
   });
 
   if (options.watch) {
-    /** Directories to skip when watching */
-    const WATCH_SKIP = new Set(['node_modules', '.git', 'dist', '.next', 'build', '__pycache__']);
     /** Extensions we care about */
     const WATCH_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.php', '.md', '.mdx']);
 
@@ -275,14 +273,17 @@ export function createServer(targetPath: string, port: number = 4000, options: S
     }
 
     /** Recursively watch directories */
-    function watchDir(dir: string): void {
+    function watchDir(dir: string, isRoot: boolean): void {
       let entries: fs.Dirent[];
       try {
         entries = fs.readdirSync(dir, { withFileTypes: true });
       } catch { return; }
 
+      // Skip nested git boundaries (worktrees, submodules, nested clones)
+      if (!isRoot && entries.some(e => e.name === '.git')) return;
+
       for (const entry of entries) {
-        if (WATCH_SKIP.has(entry.name)) continue;
+        if (ALWAYS_SKIP.has(entry.name)) continue;
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
           try {
@@ -290,7 +291,7 @@ export function createServer(targetPath: string, port: number = 4000, options: S
               if (filename) onFileChange(path.join(fullPath, filename));
             });
           } catch { /* some dirs may not be watchable */ }
-          watchDir(fullPath);
+          watchDir(fullPath, false);
         }
       }
     }
@@ -301,7 +302,7 @@ export function createServer(targetPath: string, port: number = 4000, options: S
         if (filename) onFileChange(path.join(resolvedTarget, filename));
       });
     } catch { /* ignore */ }
-    watchDir(resolvedTarget);
+    watchDir(resolvedTarget, true);
     console.log('[watch] File watcher active — changes will auto-refresh the graph');
   }
 

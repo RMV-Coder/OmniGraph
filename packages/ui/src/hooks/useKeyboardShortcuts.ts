@@ -5,7 +5,7 @@ import { useEffect, useCallback } from 'react';
  *
  * Shortcuts:
  *   Ctrl+K / Cmd+K  — Focus search input
- *   1-6             — Switch layout preset (directory, hierarchical, columns, force, grid, mindmap)
+ *   1-7             — Switch layout preset (matches the sidebar order)
  *   C               — Compact nodes
  *   Escape          — Close inspector / clear search
  *   ?               — Toggle keyboard shortcut help
@@ -19,13 +19,15 @@ export interface ShortcutActions {
   onToggleHelp: () => void;
 }
 
+// Order matches LAYOUT_PRESETS (and the sidebar list) so key N = Nth preset.
 const LAYOUT_MAP: Record<string, string> = {
   '1': 'directory',
-  '2': 'hierarchical',
-  '3': 'columns',
-  '4': 'force',
-  '5': 'grid',
-  '6': 'mindmap',
+  '2': 'features',
+  '3': 'hierarchical',
+  '4': 'columns',
+  '5': 'mindmap',
+  '6': 'force',
+  '7': 'grid',
 };
 
 export function useKeyboardShortcuts(actions: ShortcutActions): void {
@@ -87,7 +89,7 @@ export function useKeyboardShortcuts(actions: ShortcutActions): void {
 /** Shortcut definitions for the help overlay */
 export const SHORTCUT_LIST = [
   { keys: 'Ctrl+K', description: 'Focus search' },
-  { keys: '1-6', description: 'Switch layout preset' },
+  { keys: '1-7', description: 'Switch layout preset' },
   { keys: 'C', description: 'Compact nodes' },
   { keys: 'Esc', description: 'Close inspector / deselect' },
   { keys: '?', description: 'Toggle this help' },

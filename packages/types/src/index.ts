@@ -24,9 +24,42 @@ export interface OmniEdge {
   label: string;
 }
 
+// ─── Feature Grouping (P0) ───────────────────────────────────────────
+// A derived, higher-level view over the graph: nodes are clustered into
+// human-meaningful "features" (Authentication, Payments, …) using route
+// paths, directory structure, and edge connectivity. Non-invasive —
+// membership is also stamped onto each member node's
+// `metadata.feature` / `metadata.featureName`.
+
+export interface FeatureGroup {
+  /** Stable id, e.g. "feature-auth" */
+  id: string;
+  /** Display name, e.g. "Authentication" */
+  name: string;
+  /** Normalized slug the feature was derived from, e.g. "auth" */
+  slug: string;
+  /** Which signal(s) produced this feature */
+  source: 'route' | 'directory' | 'mixed';
+  /** Ids of member nodes */
+  nodeIds: string[];
+  /** Route/controller nodes that named the feature */
+  entryPointIds: string[];
+  stats: { nodes: number; routes: number; entities: number };
+}
+
+export interface FeatureModel {
+  features: FeatureGroup[];
+  /** High-fan-in nodes shared across ≥2 features (e.g. logger, db client) */
+  shared: string[];
+  /** Nodes that couldn't be assigned to any feature */
+  ungrouped: string[];
+}
+
 export interface OmniGraph {
   nodes: OmniNode[];
   edges: OmniEdge[];
+  /** Derived feature clustering (attached by detectFeatures in parseDirectory) */
+  features?: FeatureModel;
 }
 
 // ─── API Debugger ────────────────────────────────────────────────────
