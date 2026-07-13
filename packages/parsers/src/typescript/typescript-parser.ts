@@ -1,5 +1,5 @@
 import { IParser } from '../IParser';
-import { OmniGraph, OmniNode, OmniEdge, MethodInfo } from '../types';
+import { OmniGraph, OmniNode, OmniEdge, MethodInfo, MethodParam } from '../types';
 import { parse } from '@typescript-eslint/typescript-estree';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -346,16 +346,29 @@ function isNodeModule(specifier: string): boolean {
   return false;
 }
 
-/** Extract parameter names from AST param nodes */
-function extractParams(params: any[] | undefined): string[] {
+/** Serialize a TSTypeAnnotation node to its source text, e.g. "CreateUserDto" */
+function annText(ann: any, source: string): string | undefined {
+  const t = ann?.typeAnnotation;
+  if (t?.range && Array.isArray(t.range)) {
+    return source.slice(t.range[0], t.range[1]).replace(/\s+/g, ' ').trim();
+  }
+  return undefined;
+}
+
+/** Extract typed parameters from AST param nodes (name + type annotation) */
+function extractParams(params: any[] | undefined, source: string): MethodParam[] {
   if (!params) return [];
-  return params.map((p: any) => {
-    if (p.type === 'Identifier') return p.name;
-    if (p.type === 'AssignmentPattern' && p.left?.name) return p.left.name;
-    if (p.type === 'RestElement' && p.argument?.name) return `...${p.argument.name}`;
-    if (p.type === 'ObjectPattern') return '{ ... }';
-    if (p.type === 'ArrayPattern') return '[ ... ]';
-    return '?';
+  return params.map((p: any): MethodParam => {
+    if (p.type === 'Identifier') return { name: p.name, type: annText(p.typeAnnotation, source) };
+    if (p.type === 'AssignmentPattern') {
+      const left = p.left ?? {};
+      const name = left.name ?? (left.type === 'ObjectPattern' ? '{ … }' : left.type === 'ArrayPattern' ? '[ … ]' : '?');
+      return { name, type: annText(left.typeAnnotation ?? p.typeAnnotation, source) };
+    }
+    if (p.type === 'RestElement') return { name: `...${p.argument?.name ?? ''}`, type: annText(p.typeAnnotation, source) };
+    if (p.type === 'ObjectPattern') return { name: '{ … }', type: annText(p.typeAnnotation, source) };
+    if (p.type === 'ArrayPattern') return { name: '[ … ]', type: annText(p.typeAnnotation, source) };
+    return { name: '?' };
   });
 }
 
@@ -372,7 +385,7 @@ export class TypeScriptParser implements IParser {
 
     let ast: ReturnType<typeof parse>;
     try {
-      ast = parse(source, { jsx: true, errorRecovery: true });
+      ast = parse(source, { jsx: true, errorRecovery: true, range: true });
     } catch {
       const fallbackType = /\.(js|jsx)$/.test(filePath) ? 'javascript-file' : 'typescript-file';
       return {
@@ -494,7 +507,8 @@ export class TypeScriptParser implements IParser {
           endLine: stmt.loc?.end.line ?? 0,
           kind: 'function',
           exported: false,
-          params: extractParams(stmt.params),
+          params: extractParams(stmt.params, source),
+          returnType: annText((stmt as any).returnType, source),
         });
       }
 
@@ -508,7 +522,8 @@ export class TypeScriptParser implements IParser {
             endLine: decl.loc?.end.line ?? 0,
             kind: 'function',
             exported: true,
-            params: extractParams(decl.params),
+            params: extractParams(decl.params, source),
+            returnType: annText(decl.returnType, source),
           });
         }
         // Exported arrow functions: export const foo = () => {}
@@ -521,7 +536,8 @@ export class TypeScriptParser implements IParser {
                 endLine: d.loc?.end.line ?? 0,
                 kind: 'arrow',
                 exported: true,
-                params: extractParams(d.init.params),
+                params: extractParams(d.init.params, source),
+                returnType: annText(d.init.returnType, source),
               });
             }
           }
@@ -538,7 +554,8 @@ export class TypeScriptParser implements IParser {
               endLine: d.loc?.end.line ?? 0,
               kind: 'arrow',
               exported: false,
-              params: extractParams(d.init.params),
+              params: extractParams(d.init.params, source),
+              returnType: annText(d.init.returnType, source),
             });
           }
         }
@@ -554,7 +571,8 @@ export class TypeScriptParser implements IParser {
             endLine: decl.loc?.end.line ?? 0,
             kind: 'function',
             exported: true,
-            params: extractParams(decl.params),
+            params: extractParams(decl.params, source),
+            returnType: annText(decl.returnType, source),
           });
         }
       }
@@ -574,7 +592,8 @@ export class TypeScriptParser implements IParser {
               endLine: member.loc?.end.line ?? 0,
               kind: member.kind === 'get' ? 'getter' : member.kind === 'set' ? 'setter' : 'method',
               exported: stmt.type === 'ExportNamedDeclaration',
-              params: extractParams(member.value?.params),
+              params: extractParams(member.value?.params, source),
+              returnType: annText(member.value?.returnType, source),
             });
           }
         }

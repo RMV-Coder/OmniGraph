@@ -280,7 +280,10 @@ function expandMethods(
       for (const method of node.methods) {
         const mId = `${node.id}#${method.name}`;
         mIds.push(mId);
-        const paramStr = method.params.length > 0 ? `(${method.params.join(', ')})` : '()';
+        const shortType = (t: string) => (t.length > 18 ? t.slice(0, 17) + '…' : t);
+        const sig = method.params.map(p => (p.type ? `${p.name}: ${shortType(p.type)}` : p.name)).join(', ');
+        const ret = method.returnType ? `: ${shortType(method.returnType)}` : '';
+        const paramStr = `(${sig})${ret}`;
         newNodes.push({
           id: mId,
           type: 'method-node',

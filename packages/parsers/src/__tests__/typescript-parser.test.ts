@@ -127,6 +127,56 @@ describe('TypeScriptParser.parse - NestJS decorators', () => {
   });
 });
 
+describe('TypeScriptParser.parse - typed method extraction (P2)', () => {
+  it('captures parameter types and return type', () => {
+    const source = `
+      export function createUser(body: CreateUserDto, opts?: Options): Promise<User> {
+        return save(body);
+      }
+    `;
+    const m = parser.parse('/project/src/users.ts', source).nodes![0].methods!
+      .find(x => x.name === 'createUser')!;
+    expect(m.params).toEqual([
+      { name: 'body', type: 'CreateUserDto' },
+      { name: 'opts', type: 'Options' },
+    ]);
+    expect(m.returnType).toBe('Promise<User>');
+  });
+
+  it('captures destructured payload types (Next.js route handler)', () => {
+    const source = `
+      export async function GET(req: Request, { params }: { params: { id: string } }) {
+        return Response.json({});
+      }
+    `;
+    const m = parser.parse('/project/app/api/users/[id]/route.ts', source).nodes![0].methods!
+      .find(x => x.name === 'GET')!;
+    expect(m.params[0]).toEqual({ name: 'req', type: 'Request' });
+    expect(m.params[1].name).toBe('{ … }');
+    expect(m.params[1].type).toBe('{ params: { id: string } }');
+  });
+
+  it('leaves params untyped when there is no annotation', () => {
+    const source = `export const f = (a, b) => a + b;`;
+    const m = parser.parse('/project/src/f.ts', source).nodes![0].methods!
+      .find(x => x.name === 'f')!;
+    expect(m.params).toEqual([{ name: 'a' }, { name: 'b' }]);
+    expect(m.returnType).toBeUndefined();
+  });
+
+  it('captures class method types', () => {
+    const source = `
+      export class UserService {
+        findOne(id: number): User | null { return null; }
+      }
+    `;
+    const m = parser.parse('/project/src/user.service.ts', source).nodes![0].methods!
+      .find(x => x.name === 'findOne')!;
+    expect(m.params).toEqual([{ name: 'id', type: 'number' }]);
+    expect(m.returnType).toBe('User | null');
+  });
+});
+
 describe('TypeScriptParser.parse - import edges', () => {
   it('extracts relative import edges', () => {
     // Use a path where the target actually exists in our fixtures

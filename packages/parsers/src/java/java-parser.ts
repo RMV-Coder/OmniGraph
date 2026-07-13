@@ -226,7 +226,7 @@ export class JavaParser implements IParser {
           endLine: endLine + 1,
           kind: insideClass ? 'method' : 'function',
           exported: isPublic,
-          params,
+          params: params.map((name) => ({ name })),
         });
         continue;
       }

@@ -194,7 +194,7 @@ export class RustParser implements IParser {
           endLine: endLine + 1,
           kind: insideImpl ? 'method' : 'function',
           exported: isPublic,
-          params,
+          params: params.map((name) => ({ name })),
         });
         continue;
       } else {

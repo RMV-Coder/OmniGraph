@@ -11,7 +11,7 @@
  * Pure and deterministic (no timestamps) so output is testable and produces
  * clean diffs when regenerated.
  */
-import type { OmniGraph, OmniNode, FeatureGroup, FeatureModel } from '../types';
+import type { OmniGraph, OmniNode, FeatureGroup, FeatureModel, MethodInfo } from '../types';
 import { detectFeatures } from './feature-detector';
 
 export interface DocFile {
@@ -50,6 +50,19 @@ function mermaidIds() {
 
 function routeText(n: OmniNode): string {
   return n.metadata.route || n.metadata.path || '';
+}
+
+/** Typed signature of a method, e.g. "POST(req: Request, body: CreateUserDto): Promise<User>" */
+function signature(m: MethodInfo): string {
+  const ps = m.params.map(p => (p.type ? `${p.name}: ${p.type}` : p.name)).join(', ');
+  return `${m.name}(${ps})${m.returnType ? `: ${m.returnType}` : ''}`;
+}
+
+/** Handler methods worth documenting for a route/entry node */
+function handlers(n: OmniNode): MethodInfo[] {
+  const methods = n.methods ?? [];
+  const exported = methods.filter(m => m.exported && m.kind !== 'getter' && m.kind !== 'setter');
+  return (exported.length ? exported : methods).slice(0, 10);
 }
 
 // ─── Cross-feature dependency computation ───────────────────────────
@@ -246,15 +259,18 @@ function renderFeature(
   L.push(`| ${feature.stats.nodes} | ${feature.stats.routes} | ${feature.stats.entities} | ${feature.source} |`);
   L.push('');
 
-  // ── Routes ──
+  // ── Routes & payloads ──
   if (feature.entryPointIds.length > 0) {
-    L.push('## Routes');
+    L.push('## Routes & payloads');
     L.push('');
     for (const id of feature.entryPointIds) {
       const n = nodeById.get(id);
       if (!n) continue;
       const r = routeText(n);
       L.push(`- ${r ? `\`${cell(r)}\` — ` : ''}${cell(n.label)}`);
+      for (const m of handlers(n)) {
+        L.push(`  - \`${cell(signature(m))}\``);
+      }
     }
     L.push('');
   }
@@ -328,7 +344,17 @@ function buildManifest(
       stats: f.stats,
       entryPoints: f.entryPointIds.map(id => {
         const n = nodeById.get(id);
-        return { file: id, label: n?.label ?? '', route: n ? routeText(n) : '' };
+        return {
+          file: id,
+          label: n?.label ?? '',
+          route: n ? routeText(n) : '',
+          handlers: n ? handlers(n).map(m => ({
+            name: m.name,
+            signature: signature(m),
+            params: m.params,
+            returnType: m.returnType ?? null,
+          })) : [],
+        };
       }),
       dependsOn: d ? rankDeps(d.dependsOn).map(([id, count]) => ({ feature: id, name: nameById.get(id) ?? id, count })) : [],
       usedBy: d ? rankDeps(d.usedBy).map(([id, count]) => ({ feature: id, name: nameById.get(id) ?? id, count })) : [],
