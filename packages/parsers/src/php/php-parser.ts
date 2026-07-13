@@ -324,7 +324,7 @@ export class PhpParser implements IParser {
           endLine: endLine + 1,
           kind,
           exported,
-          params,
+          params: params.map((name) => ({ name })),
         });
         continue;
       }

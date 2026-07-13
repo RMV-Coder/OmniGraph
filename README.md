@@ -123,7 +123,7 @@ OmniGraph doesn't just find imports — it understands framework patterns:
 OmniGraph clusters files into higher-level **features** (Authentication, Payments, Channels…) so you can read a codebase by capability, not just by file. Features are derived from route paths, directory structure, edge connectivity, and filenames — no config required — and each node is stamped with its feature in the graph JSON (for AI agents).
 - **Graph view** — the "Group by Feature" layout draws one box per feature.
 - **CLI** — `graph --features` lists them; `--json` emits the full model.
-- **Docs generator** — `omnigraph docs` writes a navigable docs tree: a `README.md` index with a Mermaid map of how features connect, a page per feature (summary, routes, dependencies, key files, and a Mermaid flow diagram), and a `features.json` manifest. Regenerate it in CI to keep an always-current architecture guide.
+- **Docs generator** — `omnigraph docs` writes a navigable docs tree: a `README.md` index with a Mermaid map of how features connect, a page per feature (summary, routes with **typed handler signatures** — params and return types extracted from the AST, e.g. `POST(request: NextRequest): Promise<NextResponse<ApiResponse>>` — dependencies, key files, and a Mermaid flow diagram), and a `features.json` manifest. Regenerate it in CI to keep an always-current architecture guide.
 
 ### Live Watch Mode
 Start with `--watch` to enable live file watching. OmniGraph monitors your project for changes and automatically re-parses and pushes updates to the UI via Server-Sent Events (SSE). No manual refresh needed.

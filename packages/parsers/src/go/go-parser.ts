@@ -198,7 +198,7 @@ export class GoParser implements IParser {
           endLine: endLine + 1,
           kind: 'method',
           exported: name[0] === name[0].toUpperCase(),
-          params,
+          params: params.map((name) => ({ name })),
         });
         continue;
       }
@@ -220,7 +220,7 @@ export class GoParser implements IParser {
           endLine: endLine + 1,
           kind: 'function',
           exported: name[0] === name[0].toUpperCase(),
-          params,
+          params: params.map((name) => ({ name })),
         });
         continue;
       }

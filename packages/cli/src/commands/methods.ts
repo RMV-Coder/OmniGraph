@@ -56,7 +56,8 @@ export const methodsCommand = new Command('methods')
       kind: m.kind,
       name: m.name,
       lines: `${m.line}-${m.endLine}`,
-      params: m.params.join(', ') || '()',
+      params: m.params.map(p => (p.type ? `${p.name}: ${p.type}` : p.name)).join(', ') || '()',
+      returns: m.returnType ?? '',
     }));
     printOutput(rows, { json: false });
   });

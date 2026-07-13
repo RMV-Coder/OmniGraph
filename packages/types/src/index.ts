@@ -1,12 +1,20 @@
 // ─── Core Graph Model ────────────────────────────────────────────────
 
+export interface MethodParam {
+  name: string;
+  /** Type annotation text, when available (TypeScript). e.g. "CreateUserDto" */
+  type?: string;
+}
+
 export interface MethodInfo {
   name: string;
   line: number;
   endLine: number;
   kind: 'function' | 'method' | 'arrow' | 'getter' | 'setter';
   exported: boolean;
-  params: string[];
+  params: MethodParam[];
+  /** Return type annotation text, when available (TypeScript) */
+  returnType?: string;
 }
 
 export interface OmniNode {

@@ -294,7 +294,7 @@ export class PythonParser implements IParser {
           endLine: endLine + 1, // 1-based
           kind,
           exported,
-          params,
+          params: params.map((name) => ({ name })),
         });
         continue;
       }
