@@ -206,7 +206,13 @@ function featureFlowchart(
     lines.push(`  ${id(nid)}["${mlabel(label(nid))}"]${cls}`);
   };
 
-  let edgeCount = 0;
+  const emittedEdges = new Set<string>();
+  const addEdge = (a: string, b: string) => {
+    const key = `${a}->${b}`;
+    if (a === b || emittedEdges.has(key)) return;
+    emittedEdges.add(key);
+    lines.push(`  ${a} --> ${b}`);
+  };
   for (const seed of seeds) {
     if (!nodeById.has(seed)) continue;
     if (!rendered.has(seed)) { rendered.add(seed); emitNode(seed); }
@@ -220,15 +226,14 @@ function featureFlowchart(
           rendered.add(bkey);
           lines.push(`  ${id(bkey)}(["▶ ${mlabel(nameById.get(tFeat) ?? tFeat)}"]):::boundary`);
         }
-        lines.push(`  ${id(seed)} --> ${id(bkey)}`);
-        edgeCount++;
+        addEdge(id(seed), id(bkey));
       } else if (memberSet.has(tgt)) {
         if (!rendered.has(tgt)) { rendered.add(tgt); emitNode(tgt); }
-        lines.push(`  ${id(seed)} --> ${id(tgt)}`);
-        edgeCount++;
+        addEdge(id(seed), id(tgt));
       }
     }
   }
+  const edgeCount = emittedEdges.size;
 
   if (edgeCount === 0) return [];
   return [

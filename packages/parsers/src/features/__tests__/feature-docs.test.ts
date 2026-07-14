@@ -75,6 +75,28 @@ describe('generateFeatureDocs', () => {
     expect(auth).toContain('flowchart TD');
   });
 
+  it('deduplicates flow-diagram edges (no repeated boundary arrows)', () => {
+    const g: OmniGraph = {
+      nodes: [
+        node('app/api/auth/route.ts', 'nextjs-api-route', { route: '/api/auth' }),
+        node('lib/billing/one.ts'), node('lib/billing/two.ts'), node('lib/billing/three.ts'),
+      ],
+      // three imports from the auth route into the (single) billing feature —
+      // these collapse to one boundary node and must not draw three arrows.
+      edges: [
+        edge('app/api/auth/route.ts', 'lib/billing/one.ts'),
+        edge('app/api/auth/route.ts', 'lib/billing/two.ts'),
+        edge('app/api/auth/route.ts', 'lib/billing/three.ts'),
+      ],
+    };
+    g.features = detectFeatures(g);
+    const doc = find(generateFeatureDocs(g), 'features/auth.md')!.content;
+    const flow = doc.split('```mermaid')[1] ?? '';
+    const arrows = flow.split('\n').map(l => l.trim()).filter(l => l.includes('-->'));
+    expect(arrows.length).toBeGreaterThan(0);
+    expect(arrows.length).toBe(new Set(arrows).size);
+  });
+
   it('is deterministic across runs', () => {
     const a = JSON.stringify(generateFeatureDocs(sampleGraph()));
     const b = JSON.stringify(generateFeatureDocs(sampleGraph()));
