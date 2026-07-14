@@ -81,6 +81,36 @@ describe('generateFeatureDocs', () => {
     expect(a).toBe(b);
   });
 
+  it('renders typed handler signatures under routes and in the manifest (P2)', () => {
+    const g: OmniGraph = {
+      nodes: [
+        {
+          id: 'app/api/users/route.ts',
+          type: 'nextjs-api-route',
+          label: 'route',
+          metadata: { route: '/api/users' },
+          methods: [{
+            name: 'POST', line: 1, endLine: 3, kind: 'function', exported: true,
+            params: [{ name: 'req', type: 'Request' }, { name: 'body', type: 'CreateUserDto' }],
+            returnType: 'Promise<User>',
+          }],
+        },
+      ],
+      edges: [],
+    };
+    g.features = detectFeatures(g);
+    const files = generateFeatureDocs(g);
+
+    const doc = files.find(f => f.path.startsWith('features/'))!.content;
+    expect(doc).toContain('## Routes & payloads');
+    expect(doc).toContain('POST(req: Request, body: CreateUserDto): Promise<User>');
+
+    const manifest = JSON.parse(files.find(f => f.path === 'features.json')!.content);
+    const handler = manifest.features[0].entryPoints[0].handlers[0];
+    expect(handler.signature).toContain('CreateUserDto');
+    expect(handler.returnType).toBe('Promise<User>');
+  });
+
   it('computes docs even when graph.features is absent (falls back to detect)', () => {
     const g = sampleGraph();
     delete g.features;
