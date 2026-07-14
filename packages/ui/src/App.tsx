@@ -9,6 +9,7 @@ import ReactFlow, {
   useNodesState,
   useEdgesState,
   useReactFlow,
+  useStoreApi,
   ReactFlowProvider,
 } from 'reactflow';
 import {
@@ -752,6 +753,7 @@ function GraphApp() {
     fingerprint: string;
   } | null>(null);
   const { fitView } = useReactFlow();
+  const storeApi = useStoreApi();
 
   // Settings
   const {
@@ -773,7 +775,7 @@ function GraphApp() {
 
   useKeyboardShortcuts({
     onFocusSearch: () => searchInputRef.current?.focus(),
-    onLayoutChange: (preset) => setLayoutPreset(preset as LayoutPreset),
+    onLayoutChange: (preset) => { setEdges([]); setLayoutPreset(preset as LayoutPreset); },
     onCompact: () => handleCompact(),
     onCloseInspector: () => { setSelected(null); setShowShortcutHelp(false); },
     onToggleHelp: () => setShowShortcutHelp(prev => !prev),
@@ -1079,6 +1081,45 @@ function GraphApp() {
 
   const matchCount = matchingIds.size;
 
+  // React Flow only draws edges once its nodes have measured dimensions and
+  // handle bounds. In some environments (embedded/headless panes) the automatic
+  // ResizeObserver measurement never populates them, so edges stay invisible
+  // even though the data is correct. Self-heal: shortly after the node set
+  // changes, if any rendered node is still unmeasured, force-measure them from
+  // their DOM elements. A true no-op where auto-measurement already worked.
+  useEffect(() => {
+    if (nodes.length === 0) return;
+    const t = setTimeout(() => {
+      const state = storeApi.getState();
+      const unmeasured = nodes.some(n => {
+        const internal = state.nodeInternals.get(n.id);
+        return internal != null && internal.width == null;
+      });
+      if (!unmeasured) return;
+      const updates: { id: string; nodeElement: HTMLDivElement; forceUpdate: boolean }[] = [];
+      for (const n of nodes) {
+        const el = document.querySelector(`.react-flow__node[data-id="${n.id}"]`);
+        if (el instanceof HTMLDivElement) updates.push({ id: n.id, nodeElement: el, forceUpdate: true });
+      }
+      if (updates.length > 0) state.updateNodeDimensions(updates);
+    }, 80);
+    return () => clearTimeout(t);
+  }, [nodes, storeApi]);
+
+
+  // On a structural change (layout preset or detail level), React Flow can
+  // leave stale edge elements pointing at removed/old node positions. Clearing
+  // edges in the change handlers (below) commits an empty-edge frame before the
+  // new layout/simulation repopulates them, tearing the stale ones down.
+  const handleLayoutChange = useCallback((preset: LayoutPreset) => {
+    setEdges([]);
+    setLayoutPreset(preset);
+  }, [setEdges]);
+  const handleDetailChange = useCallback((level: DetailLevel) => {
+    setEdges([]);
+    setDetailLevel(level);
+  }, [setEdges]);
+
   const handleTypeToggle = useCallback((type: string) => {
     setActiveTypes(prev => {
       const next = new Set(prev);
@@ -1360,9 +1401,9 @@ function GraphApp() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         layoutPreset={layoutPreset}
-        onLayoutChange={setLayoutPreset}
+        onLayoutChange={handleLayoutChange}
         detailLevel={detailLevel}
-        onDetailChange={setDetailLevel}
+        onDetailChange={handleDetailChange}
         mindmapDirection={mindmapDirection}
         onDirectionChange={setMindmapDirection}
         searchQuery={searchQuery}
@@ -1462,6 +1503,7 @@ function GraphApp() {
           });
         }}
         onLoadBookmark={(bm) => {
+          setEdges([]);
           setLayoutPreset(bm.layoutPreset as LayoutPreset);
           setSearchQuery(bm.searchQuery);
           setSearchFilterMode(bm.searchFilterMode as SearchFilterMode);
