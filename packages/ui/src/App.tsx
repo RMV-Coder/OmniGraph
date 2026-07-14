@@ -775,7 +775,7 @@ function GraphApp() {
 
   useKeyboardShortcuts({
     onFocusSearch: () => searchInputRef.current?.focus(),
-    onLayoutChange: (preset) => setLayoutPreset(preset as LayoutPreset),
+    onLayoutChange: (preset) => { setEdges([]); setLayoutPreset(preset as LayoutPreset); },
     onCompact: () => handleCompact(),
     onCloseInspector: () => { setSelected(null); setShowShortcutHelp(false); },
     onToggleHelp: () => setShowShortcutHelp(prev => !prev),
@@ -1106,6 +1106,20 @@ function GraphApp() {
     return () => clearTimeout(t);
   }, [nodes, storeApi]);
 
+
+  // On a structural change (layout preset or detail level), React Flow can
+  // leave stale edge elements pointing at removed/old node positions. Clearing
+  // edges in the change handlers (below) commits an empty-edge frame before the
+  // new layout/simulation repopulates them, tearing the stale ones down.
+  const handleLayoutChange = useCallback((preset: LayoutPreset) => {
+    setEdges([]);
+    setLayoutPreset(preset);
+  }, [setEdges]);
+  const handleDetailChange = useCallback((level: DetailLevel) => {
+    setEdges([]);
+    setDetailLevel(level);
+  }, [setEdges]);
+
   const handleTypeToggle = useCallback((type: string) => {
     setActiveTypes(prev => {
       const next = new Set(prev);
@@ -1387,9 +1401,9 @@ function GraphApp() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         layoutPreset={layoutPreset}
-        onLayoutChange={setLayoutPreset}
+        onLayoutChange={handleLayoutChange}
         detailLevel={detailLevel}
-        onDetailChange={setDetailLevel}
+        onDetailChange={handleDetailChange}
         mindmapDirection={mindmapDirection}
         onDirectionChange={setMindmapDirection}
         searchQuery={searchQuery}
@@ -1489,6 +1503,7 @@ function GraphApp() {
           });
         }}
         onLoadBookmark={(bm) => {
+          setEdges([]);
           setLayoutPreset(bm.layoutPreset as LayoutPreset);
           setSearchQuery(bm.searchQuery);
           setSearchFilterMode(bm.searchFilterMode as SearchFilterMode);
