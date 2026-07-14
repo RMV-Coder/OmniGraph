@@ -25,6 +25,8 @@ import type { SidebarTab } from './components/Sidebar';
 import DirectoryGroupNode from './components/DirectoryGroupNode';
 import { applyLayout } from './layout';
 import type { LayoutPreset, MindmapDirection } from './layout';
+import { buildFeatureView } from './featureView';
+import type { DetailLevel } from './featureView';
 import { NODE_COLORS } from './layout/shared';
 import { useForceSimulation } from './hooks/useForceSimulation';
 import { useExport } from './hooks/useExport';
@@ -726,6 +728,7 @@ function applyTraceStyles(
 function GraphApp() {
   const [graphData, setGraphData] = useState<OmniGraph | null>(null);
   const [layoutPreset, setLayoutPreset] = useState<LayoutPreset>('directory');
+  const [detailLevel, setDetailLevel] = useState<DetailLevel>('files');
   const [mindmapDirection, setMindmapDirection] = useState<MindmapDirection>('LR');
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -900,14 +903,24 @@ function GraphApp() {
     // Suppress edge animation during layout switch to prevent SVG rendering storm
     layoutTransitionRef.current = true;
     const options = { mindmapDirection };
-    const result = applyLayout(layoutPreset, mergedGraphData, options);
+    // Semantic zoom (P3): when the feature layout is active, transform the
+    // graph by detail level. Collapsed "features" view is a small feature
+    // dependency graph, rendered hierarchically.
+    let viewGraph = mergedGraphData;
+    let effectivePreset = layoutPreset;
+    if (layoutPreset === 'features' && detailLevel !== 'files') {
+      const fv = buildFeatureView(mergedGraphData, detailLevel);
+      viewGraph = fv.graph;
+      if (fv.collapsed) effectivePreset = 'hierarchical';
+    }
+    const result = applyLayout(effectivePreset, viewGraph, options);
     setLayoutNodes(result.nodes);
     setLayoutEdges(result.edges);
     setTimeout(() => {
       layoutTransitionRef.current = false;
       fitView({ padding: 0.1 });
     }, 80);
-  }, [mergedGraphData, layoutPreset, mindmapDirection]);
+  }, [mergedGraphData, layoutPreset, detailLevel, mindmapDirection]);
 
   // Apply edge label settings: hide/show labels based on user preferences
   const applyEdgeLabelSettings = useCallback((edgeList: Edge[]): Edge[] => {
@@ -1348,6 +1361,8 @@ function GraphApp() {
         onTabChange={setActiveTab}
         layoutPreset={layoutPreset}
         onLayoutChange={setLayoutPreset}
+        detailLevel={detailLevel}
+        onDetailChange={setDetailLevel}
         mindmapDirection={mindmapDirection}
         onDirectionChange={setMindmapDirection}
         searchQuery={searchQuery}

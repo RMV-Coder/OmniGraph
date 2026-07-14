@@ -1,6 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import type { LayoutPreset, MindmapDirection } from '../layout';
 import { LAYOUT_PRESETS } from '../layout';
+import { DETAIL_LEVELS } from '../featureView';
+import type { DetailLevel } from '../featureView';
 import { NODE_COLORS } from '../layout/shared';
 import type { OmniNode, OmniEdge, HttpMethod, ProxyResponse, FlowTrace } from '../types';
 import type { SearchFilterMode } from '../App';
@@ -116,6 +118,8 @@ interface Props {
   // Layout
   layoutPreset: LayoutPreset;
   onLayoutChange: (preset: LayoutPreset) => void;
+  detailLevel: DetailLevel;
+  onDetailChange: (level: DetailLevel) => void;
   mindmapDirection: MindmapDirection;
   onDirectionChange: (dir: MindmapDirection) => void;
   // Search & filter
@@ -366,7 +370,7 @@ function ExportDropdown({
 // ─── Controls Panel ──────────────────────────────────────────────────
 
 function ControlsPanel({
-  layoutPreset, onLayoutChange, mindmapDirection, onDirectionChange,
+  layoutPreset, onLayoutChange, detailLevel, onDetailChange, mindmapDirection, onDirectionChange,
   searchQuery, onSearchChange, searchInputRef, searchFilterMode, onSearchFilterModeChange,
   searchDepth, onSearchDepthChange,
   activeTypes, onTypeToggle, availableTypes,
@@ -377,7 +381,7 @@ function ControlsPanel({
   bookmarks, onSaveBookmark, onLoadBookmark, onRemoveBookmark,
   annotation, onSetAnnotation,
 }: Pick<Props,
-  'layoutPreset' | 'onLayoutChange' | 'mindmapDirection' | 'onDirectionChange' |
+  'layoutPreset' | 'onLayoutChange' | 'detailLevel' | 'onDetailChange' | 'mindmapDirection' | 'onDirectionChange' |
   'searchQuery' | 'onSearchChange' | 'searchInputRef' | 'searchFilterMode' | 'onSearchFilterModeChange' |
   'searchDepth' | 'onSearchDepthChange' |
   'activeTypes' | 'onTypeToggle' | 'availableTypes' |
@@ -404,6 +408,37 @@ function ControlsPanel({
             ))}
           </select>
         </div>
+
+        {layoutPreset === 'features' && (
+          <div style={{ marginBottom: 10 }}>
+            <p style={labelStyle}>Detail</p>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {DETAIL_LEVELS.map((d) => {
+                const active = detailLevel === d.key;
+                return (
+                  <button
+                    key={d.key}
+                    onClick={() => onDetailChange(d.key)}
+                    title={d.hint}
+                    style={{
+                      flex: 1,
+                      padding: '5px 6px',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      borderRadius: 6,
+                      border: '1px solid var(--border)',
+                      background: active ? 'var(--accent, #6366f1)' : 'var(--bg-raised)',
+                      color: active ? '#fff' : 'var(--text-secondary)',
+                    }}
+                  >
+                    {d.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {layoutPreset === 'mindmap' && (
           <div style={{ marginBottom: 10 }}>

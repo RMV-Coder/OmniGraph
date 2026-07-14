@@ -28,6 +28,8 @@ export const NODE_COLORS: Record<string, string> = {
   'db-view': '#8e44ad',          // Purple for views
   // Method-level nodes
   'method-node': '#5a5a8a',
+  // Collapsed feature summary (semantic zoom)
+  'feature-summary': '#6366f1',
   // API Schema
   'openapi-spec': '#85ea2d',        // Swagger green
   'graphql-schema': '#e10098',      // GraphQL pink
