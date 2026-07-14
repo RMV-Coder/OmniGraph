@@ -9,6 +9,7 @@ import ReactFlow, {
   useNodesState,
   useEdgesState,
   useReactFlow,
+  useStoreApi,
   ReactFlowProvider,
 } from 'reactflow';
 import {
@@ -752,6 +753,7 @@ function GraphApp() {
     fingerprint: string;
   } | null>(null);
   const { fitView } = useReactFlow();
+  const storeApi = useStoreApi();
 
   // Settings
   const {
@@ -1078,6 +1080,31 @@ function GraphApp() {
       settings.graph.animateEdges, highlightedDbNodes, selected]);
 
   const matchCount = matchingIds.size;
+
+  // React Flow only draws edges once its nodes have measured dimensions and
+  // handle bounds. In some environments (embedded/headless panes) the automatic
+  // ResizeObserver measurement never populates them, so edges stay invisible
+  // even though the data is correct. Self-heal: shortly after the node set
+  // changes, if any rendered node is still unmeasured, force-measure them from
+  // their DOM elements. A true no-op where auto-measurement already worked.
+  useEffect(() => {
+    if (nodes.length === 0) return;
+    const t = setTimeout(() => {
+      const state = storeApi.getState();
+      const unmeasured = nodes.some(n => {
+        const internal = state.nodeInternals.get(n.id);
+        return internal != null && internal.width == null;
+      });
+      if (!unmeasured) return;
+      const updates: { id: string; nodeElement: HTMLDivElement; forceUpdate: boolean }[] = [];
+      for (const n of nodes) {
+        const el = document.querySelector(`.react-flow__node[data-id="${n.id}"]`);
+        if (el instanceof HTMLDivElement) updates.push({ id: n.id, nodeElement: el, forceUpdate: true });
+      }
+      if (updates.length > 0) state.updateNodeDimensions(updates);
+    }, 80);
+    return () => clearTimeout(t);
+  }, [nodes, storeApi]);
 
   const handleTypeToggle = useCallback((type: string) => {
     setActiveTypes(prev => {
