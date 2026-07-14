@@ -108,7 +108,7 @@ OmniGraph doesn't just find imports — it understands framework patterns:
 - **Obsidian/Markdown**: Detects wiki-links (`[[Page]]`), embeds (`![[Page]]`), YAML frontmatter (tags, aliases), and classifies MOC/daily/readme note types
 
 ### Interactive Visualization
-- **6 Layout Presets**: Directory (grouped by folder), Hierarchical, Column Flow (Frontend/API/Services/Database), Force-Directed, Grid, Mind Map (LR/RL)
+- **7 Layout Presets**: Directory (grouped by folder), Group by Feature, Hierarchical, Column Flow (Frontend/API/Services/Database), Force-Directed, Grid, Mind Map (LR/RL)
 - **Column Flow Layout**: Top-to-bottom layout with 4 columns. Nodes are auto-classified by type and file path. Column-aware compaction preserves columns while collapsing vertical gaps.
 - **Live Force Simulation**: In force-directed mode, dragging a node causes nearby nodes to push and pull reactively via d3-force physics
 - **Search & Filter with BFS Expansion**: Search nodes by name, filter by type with color-coded toggle chips. Hide or dim non-matching nodes. Connected nodes expand via BFS depth slider to reveal full data flow paths.
@@ -121,7 +121,7 @@ OmniGraph doesn't just find imports — it understands framework patterns:
 
 ### Feature Grouping & Docs
 OmniGraph clusters files into higher-level **features** (Authentication, Payments, Channels…) so you can read a codebase by capability, not just by file. Features are derived from route paths, directory structure, edge connectivity, and filenames — no config required — and each node is stamped with its feature in the graph JSON (for AI agents).
-- **Graph view** — the "Group by Feature" layout draws one box per feature.
+- **Graph view** — the "Group by Feature" layout draws one box per feature, with a **semantic-zoom "Detail" toggle** (Features → Flows → Files): collapse to a feature-dependency map, show just the entry-point/flow skeleton, or expand to the full file graph.
 - **CLI** — `graph --features` lists them; `--json` emits the full model.
 - **Docs generator** — `omnigraph docs` writes a navigable docs tree: a `README.md` index with a Mermaid map of how features connect, a page per feature (summary, routes with **typed handler signatures** — params and return types extracted from the AST, e.g. `POST(request: NextRequest): Promise<NextResponse<ApiResponse>>` — dependencies, key files, and a Mermaid flow diagram), and a `features.json` manifest. Regenerate it in CI to keep an always-current architecture guide.
 
@@ -130,7 +130,7 @@ Start with `--watch` to enable live file watching. OmniGraph monitors your proje
 
 ### Keyboard Shortcuts
 - `Ctrl+K` / `⌘K` — Focus search
-- `1`–`6` — Switch layout presets
+- `1`–`7` — Switch layout presets
 - `C` — Compact visible nodes
 - `?` — Show shortcut help overlay
 - `Esc` — Close panels and overlays

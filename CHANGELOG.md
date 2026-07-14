@@ -2,6 +2,44 @@
 
 All notable changes to OmniGraph are documented in this file.
 
+## [1.4.0] - 2026-07-14
+
+### Added
+
+#### Feature Grouping (P0)
+- **Feature detection** — Clusters files into human-meaningful features (Authentication, Payments, Channels…) via four signals: route prefixes, feature directories (descending past generic/container dirs and Next.js route groups), edge propagation, and filename-token matching. Canonical singularization merges plural/singular slugs (`webhook`/`webhooks`); one primary feature per node with `shared` and `ungrouped` buckets.
+- **Graph model** — Each node is stamped with `metadata.feature` / `metadata.featureName`, and the graph carries an optional `OmniGraph.features` model (`FeatureGroup[]` + shared/ungrouped). Runs as a post-pass in `parseDirectory` — no new parsing, fully backward-compatible.
+- **CLI** — `omnigraph graph --features` lists detected features with stats; `--json` emits the full feature model for AI agents.
+- **UI** — New "Group by Feature" layout preset (7th preset) drawing one box per feature, reusing the group-node rendering.
+
+#### Feature Documentation Generator (P1)
+- **`omnigraph docs` command** — Generates a navigable docs tree from the feature graph (`--out <dir>`, default `<repo>/omnigraph-docs`):
+  - `README.md` — overview, a Mermaid map of how features depend on each other, and a linked feature table.
+  - `features/<key>.md` per feature — summary, routes, depends-on / used-by, key files by type, and a Mermaid flow diagram.
+  - `features.json` — machine-readable manifest (features, cross-feature dependencies, entry-point handlers) for AI agents / CI.
+- Cross-feature dependencies computed from edges crossing feature boundaries. Pure and deterministic (clean diffs on regenerate).
+
+#### Real Payload Types (P2)
+- **Typed method signatures** — `MethodInfo.params` upgraded from names-only to `MethodParam[]` (`{ name, type? }`), plus a new `MethodInfo.returnType`. The TypeScript parser extracts type annotations from the AST via source ranges, including destructured payload shapes (e.g. `{ params }: { params: { id: string } }`).
+- **Surfaced everywhere** — Feature docs gain a "Routes & payloads" section with typed handler signatures (e.g. `POST(request: NextRequest): Promise<NextResponse<ApiResponse>>`) and per-handler entries in `features.json`; the CLI `methods` command shows `name: type` params and a `returns` column; UI method-node labels render typed signatures.
+
+#### Semantic Zoom (P3)
+- **"Detail" toggle** on the Group by Feature layout for progressive disclosure:
+  - **Features** — collapse to one node per feature, connected by aggregated cross-feature dependency edges.
+  - **Flows** — feature entry points (routes/controllers) plus their immediate neighbors.
+  - **Files** — the full graph (default).
+
+### Fixed
+- **Edges not rendering** — React Flow only draws edges once its nodes have measured dimensions and handle bounds; in some environments the automatic `ResizeObserver` measurement never populated them, leaving edges invisible despite correct data. Fixed by force-measuring node dimensions after the rendered node set changes (a no-op where auto-measurement already works).
+- **Stale / dangling edges on layout & detail changes** — switching layout preset or detail level left React Flow edge elements pointing at removed node positions (lines trailing into empty space). Fixed by clearing edges on a structural change so the old edge DOM is torn down before the new set mounts.
+- **`normalizeUrl` trailing slash** — `/api/users/` no longer normalizes to `/api/users/:param`; the trailing slash is stripped (template-literal params are still captured via `${…}` → `:param`).
+
+### Changed
+- **Directory skipping** — Expanded `ALWAYS_SKIP` (dependencies, build/cache output, editor, and agent-tool dirs including `.claude`) and added **nested git-boundary skipping** — any non-root directory containing a `.git` entry (worktrees, submodules, nested clones) is skipped. This fixes pathological parses of repos with in-tree worktrees (e.g. `.claude/worktrees/**`) that previously walked many times the real source. Server `--watch` reuses the same skip set.
+- **Keyboard shortcuts** — `1`–`7` now switch layout presets (the 7th is "Group by Feature").
+
+---
+
 ## [1.3.0] - 2026-04-04
 
 ### Added
